@@ -10,6 +10,7 @@ import (
 
 const (
 	makeChannelCommand = "mkch"
+	defaultPrefix      = "!"
 )
 
 // Commands maps between the command name and the command logic.
@@ -44,12 +45,17 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	if !strings.HasPrefix(m.Content, serverData.CommandPrefix) {
+	prefix := defaultPrefix
+	if serverData.CommandPrefix != "" {
+		prefix = serverData.CommandPrefix
+	}
+
+	if !strings.HasPrefix(m.Content, prefix) {
 		// Not a command, ignore.
 		return
 	}
 
-	commandText := strings.TrimPrefix(m.Content, serverData.CommandPrefix)
+	commandText := strings.TrimPrefix(m.Content, prefix)
 	commandParts := strings.Split(commandText, " ")
 
 	if commandParts[0] == serverData.CustomCommand {
