@@ -58,7 +58,7 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 	commandText := strings.TrimPrefix(m.Content, prefix)
 	commandParts := strings.Split(commandText, " ")
 
-	if commandParts[0] == serverData.CustomCommand {
+	if serverData.CustomCommand != "" && commandParts[0] == serverData.CustomCommand {
 		commandParts[0] = makeChannelCommand
 	}
 
