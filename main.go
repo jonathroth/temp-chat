@@ -36,7 +36,7 @@ func main() {
 		log.Fatalf("Failed connecting to the database: %v", err)
 	}
 
-	tempChannelBot, err := bot.NewTempChannelBot(store)
+	tempChannelBot, err := bot.NewTempChannelBot(session, store)
 	if err != nil {
 		log.Fatalf("Failed initializing bot: %v", err)
 	}
