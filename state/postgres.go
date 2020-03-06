@@ -14,14 +14,15 @@ const (
 		command_channel_id 			bigint		DEFAULT 0,
 		temp_channel_category_id	bigint		NOT NULL,
 		custom_command				varchar(32)	DEFAULT '',
+		command_prefix				char(1)		DEFAULT '!',
 		last_modified_timestamp		timestamp	NOT NULL,
 		insertion_timestamp			timestamp	NOT NULL
 	);`
-	getServerCount         = `SELECT COUNT(*) FROM servers;`
-	getServers             = `SELECT server_id, command_channel_id, temp_channel_category_id, custom_command FROM servers;`
+	getServers             = `SELECT server_id, command_channel_id, temp_channel_category_id, custom_command, command_prefix FROM servers;`
 	addServer              = `INSERT INTO servers (server_id, temp_channel_category_id, last_modified_timestamp, insertion_timestamp) VALUES ($1, $2, $3, $4);`
 	updateCustomCommand    = `UPDATE servers SET (custom_command, last_modified_timestamp) = ($2, $3) WHERE server_id = $1;`
 	updateCommandChannelID = `UPDATE servers SET (command_channel_id, last_modified_timestamp) = ($2, $3) WHERE server_id = $1;`
+	updateCommandPrefix    = `UPDATE servers SET (command_prefix, last_modified_timestamp) = ($2, $3) WHERE server_id = $1;`
 )
 
 // PostgresServerStore manages a server store over PostgreSQL.
@@ -52,14 +53,9 @@ func (s *PostgresServerStore) Connect() error {
 }
 
 // Servers returns the list of all servers managed by the bot.
-func (s *PostgresServerStore) Servers() ([]*ServerData, error) {
-	rowCount := 0
-	err := s.db.QueryRow(getServerCount).Scan(&rowCount)
-	if err != nil {
-		return nil, err
-	}
+func (s *PostgresServerStore) Servers() (ServersData, error) {
 
-	result := make([]*ServerData, 0, rowCount)
+	result := ServersData{}
 
 	rows, err := s.db.Query(getServers)
 	if err != nil {
@@ -67,13 +63,13 @@ func (s *PostgresServerStore) Servers() ([]*ServerData, error) {
 	}
 
 	for rows.Next() {
-		serverData := ServerData{}
-		err := rows.Scan(&serverData.ServerID, &serverData.CommandChannelID, &serverData.TempChannelCategoryID, &serverData.CustomCommand)
+		serverData := &ServerData{}
+		err := rows.Scan(&serverData.ServerID, &serverData.CommandChannelID, &serverData.TempChannelCategoryID, &serverData.CustomCommand, &serverData.CommandPrefix)
 		if err != nil {
 			return nil, err
 		}
 
-		result = append(result, &serverData)
+		result[serverData.ServerID] = serverData
 	}
 
 	return result, nil
@@ -95,5 +91,11 @@ func (s *PostgresServerStore) UpdateCustomCommand(serverID uint64, customCommand
 // UpdateCommandChannelID updates the custom command channel ID for a server.
 func (s *PostgresServerStore) UpdateCommandChannelID(serverID uint64, commandChannelID uint64) error {
 	_, err := s.db.Exec(updateCommandChannelID, serverID, commandChannelID, time.Now().UTC())
+	return err
+}
+
+// UpdateCommandPrefix updates the command prefix for a server.
+func (s *PostgresServerStore) UpdateCommandPrefix(serverID uint64, newPrefix string) error {
+	_, err := s.db.Exec(updateCommandChannelID, serverID, newPrefix, time.Now().UTC())
 	return err
 }
