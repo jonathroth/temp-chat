@@ -31,6 +31,17 @@ type CommandHandlerContext struct {
 
 	CommandName string
 	CommandArgs []string
+
+	replyFormatter replyFormatter
+}
+
+// NewCommandHandlerContext initializes a new instance of CommandHandlerContext.
+func NewCommandHandlerContext(session *discordgo.Session, event *discordgo.MessageCreate) *CommandHandlerContext {
+	return &CommandHandlerContext{
+		Session:        session,
+		Event:          event,
+		replyFormatter: backtickReplyFormatter,
+	}
 }
 
 func (c *CommandHandlerContext) replyUnformatted(message string) {
@@ -41,7 +52,7 @@ func (c *CommandHandlerContext) replyUnformatted(message string) {
 }
 
 func (c *CommandHandlerContext) reply(message string, args ...interface{}) {
-	c.replyUnformatted("`" + fmt.Sprintf(message, args...) + "`")
+	c.replyUnformatted(c.replyFormatter.Format(fmt.Sprintf(message, args...)))
 }
 
 func (c *CommandHandlerContext) logAndReply(message string, args ...interface{}) {
@@ -91,13 +102,10 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 		log.Fatalf("Failed to parse discord server ID: %v", err)
 	}
 
+	context := NewCommandHandlerContext(s, m)
 	serverData, serverIsSetup := b.store.Server(serverID)
-	context := &CommandHandlerContext{
-		Session:    s,
-		Event:      m,
-		ServerID:   serverID,
-		ServerData: serverData,
-	}
+	context.ServerID = serverID
+	context.ServerData = serverData
 
 	prefix := config.DefaultCommandPrefix
 	if serverIsSetup {
@@ -134,9 +142,14 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 	context.CommandName = commandParts[0]
 	context.CommandArgs = commandParts[1:]
 
+	if !config.ValidCommandLettersRegex.MatchString(context.CommandName) {
+		// Not a valid command, ignore
+		return
+	}
+
 	command, found := b.commands[commandParts[0]]
 	if !found {
-		context.reply("Unknown command %q", context.CommandName)
+		context.reply("Unknown command")
 		return
 	}
 
@@ -261,7 +274,15 @@ func (b *TempChannelBot) setPrefixHandler(context *CommandHandlerContext) error 
 			return nil
 		}
 
-		// TODO: validate prefix is a symbol character
+		if context.ServerData.CommandPrefix() == newPrefix {
+			context.reply("Prefix is already %v", newPrefix)
+			return nil
+		}
+
+		if !strings.Contains(config.ValidPrefixes, newPrefix) {
+			context.reply("Invalid prefix, please use one of the following: %v", config.ValidPrefixes)
+			return nil
+		}
 
 		err := context.ServerData.SetCustomCommandPrefix(newPrefix)
 		if err != nil {
