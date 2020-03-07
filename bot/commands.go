@@ -94,11 +94,12 @@ func (b *TempChannelBot) replyToSenderAndLog(s *discordgo.Session, channelID str
 }
 
 func helpHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string) error {
-	_, err := s.ChannelMessageSend(m.ChannelID, "```"+`css
+	_, err := s.ChannelMessageSend(m.ChannelID, "```"+`less
 [TempChat]
 TempChat is a bot that creates temporary text channels for Discord voice chats.
 
 The bot will give permission to any new user that joins the voice chat, and revoke the permission to any user that leaves it.
+All channels are created under a specific category, the category must give the bot account the [Manage Channel] permission, and must deny the [Read Text Channels & See Voice Channels] from @everyone
 
 #Commands:
 [Before Setup]
