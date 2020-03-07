@@ -113,7 +113,7 @@ func (s *PostgresServerStore) UpdateCommandChannelID(serverID uint64, commandCha
 
 // UpdateCommandPrefix updates the command prefix for a server.
 func (s *PostgresServerStore) UpdateCommandPrefix(serverID uint64, newPrefix string) error {
-	return assertOneChange(s.db.Exec(updateCommandChannelID, serverID, newPrefix, time.Now().UTC()))
+	return assertOneChange(s.db.Exec(updateCommandPrefix, serverID, newPrefix, time.Now().UTC()))
 }
 
 func assertOneChange(sqlResult sql.Result, err error) error {
