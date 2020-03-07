@@ -12,12 +12,12 @@ import (
 
 func (b *TempChannelBot) initCommands() map[string]*Command {
 	return map[string]*Command{
+		"help":                           &Command{SetupRequired: false, AdminOnly: false, Handler: helpHandler},
+		"setup":                          &Command{SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
 		config.DefaultMakeChannelCommand: &Command{SetupRequired: true, AdminOnly: false},
-		"set-mkch":                       &Command{SetupRequired: true, AdminOnly: true},
+		"set-mkch":                       &Command{SetupRequired: true, AdminOnly: true, Handler: b.setMkch},
 		"set-prefix":                     &Command{SetupRequired: true, AdminOnly: true, Handler: b.setPrefixHandler},
 		"set-command-ch":                 &Command{SetupRequired: true, AdminOnly: true, Handler: b.setCommandChannelHandler},
-		"setup":                          &Command{SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
-		"help":                           &Command{SetupRequired: false, AdminOnly: false, Handler: helpHandler},
 	}
 }
 
@@ -245,6 +245,62 @@ func (b *TempChannelBot) setupHandler(context *CommandHandlerContext) error {
 	}
 
 	context.logAndReply("Server was setup successfully, you may use %v%v", config.DefaultCommandPrefix, config.DefaultMakeChannelCommand)
+	return nil
+}
+
+func (b *TempChannelBot) setMkch(context *CommandHandlerContext) error {
+	if len(context.CommandArgs) > 1 {
+		context.reply("Too many arguments, please check %vhelp to see how to use the command", context.ServerData.CommandPrefix())
+		return nil
+	}
+
+	if len(context.CommandArgs) == 0 {
+		if !context.ServerData.HasCustomCommand() {
+			context.reply("The command is already set to %v%v, please check %vhelp to see how to use the command", context.ServerData.CommandPrefix(), config.DefaultMakeChannelCommand, context.ServerData.CommandPrefix())
+			return nil
+		}
+
+		err := context.ServerData.ResetCustomCommand()
+		if err != nil {
+			context.reply("An internal error has occurred")
+			return fmt.Errorf("ResetCustomCommand failed: %v", err)
+		}
+
+		context.reply("Temp channel command reset successful")
+	} else if len(context.CommandArgs) == 1 {
+		newCommand := context.CommandArgs[0]
+		if context.ServerData.CustomCommand() == newCommand {
+			context.reply("Command is already %v", newCommand)
+			return nil
+		}
+
+		if len(newCommand) < config.MinCommandNameLength {
+			ending := "s"
+			if config.MinCommandNameLength == 1 {
+				ending = ""
+			}
+			context.reply("The command cannot be shorter than %v character%v", config.MinCommandNameLength, ending)
+			return nil
+		}
+
+		if len(newCommand) > config.MaxCommandNameLength {
+			context.reply("The command cannot be longer than %v characters", config.MaxCommandNameLength)
+			return nil
+		}
+
+		if !config.ValidCommandLettersRegex.MatchString(newCommand) {
+			context.reply("Invalid command name, the name can only contain %v", config.ValidCommandLettersDescription)
+			return nil
+		}
+
+		err := context.ServerData.SetCustomCommand(newCommand)
+		if err != nil {
+			context.reply("An internal error has occurred")
+			return fmt.Errorf("SetCustomCommand failed: %v", err)
+		}
+
+		context.reply("Command name changed successfully")
+	}
 	return nil
 }
 
