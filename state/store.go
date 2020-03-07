@@ -18,7 +18,10 @@ type ServerStore interface {
 	Servers() (ServersData, error)
 
 	// AddServer adds a new server to the store.
-	AddServer(serverID uint64, tempChannelCategoryID uint64) error
+	AddServer(serverID uint64, tempChannelCategoryID uint64) (*ServerData, error)
+
+	// UpdateCategoryID updates the temp channel category ID for a server.
+	UpdateCategoryID(serverID uint64, newCategoryID uint64) error
 
 	// UpdateCustomCommand updates the custom command for a server.
 	UpdateCustomCommand(serverID uint64, customCommand string) error
