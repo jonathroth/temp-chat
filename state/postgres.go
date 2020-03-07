@@ -28,71 +28,153 @@ const (
 	updateCommandPrefix    = `UPDATE servers SET (command_prefix, last_modified_timestamp) = ($2, $3) WHERE server_id = $1;`
 )
 
-// PostgresServerStore manages a server store over PostgreSQL.
-type PostgresServerStore struct {
+/*
+// SyncServerData synchronizes read/writes to the server data.
+type SyncServerData struct {
+	data  *ServerData
+	mutex sync.RWMutex
+}
+
+// NewSyncServerData initializes a new instance of SyncServerData.
+func NewSyncServerData(data *ServerData) *SyncServerData {
+	return &SyncServerData{data: data}
+}
+
+// CommandChannelID synchronizes access to ServerData.CommandChannelID
+func (d *SyncServerData) CommandChannelID() uint64 {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
+	return d.data.CommandChannelID
+}
+
+// SetCommandChannelID synchronizes access to ServerData.CommandChannelID
+func (d *SyncServerData) SetCommandChannelID(value uint64) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.data.CommandChannelID = value
+}
+
+// TempChannelCategoryID synchronizes access to ServerData.TempChannelCategoryID
+func (d *SyncServerData) TempChannelCategoryID() uint64 {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
+	return d.data.TempChannelCategoryID
+}
+
+// SetTempChannelCategoryID synchronizes access to ServerData.TempChannelCategoryID
+func (d *SyncServerData) SetTempChannelCategoryID(value uint64) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.data.TempChannelCategoryID = value
+}
+
+// CustomCommand synchronizes access to ServerData.CustomCommand
+func (d *SyncServerData) CustomCommand() string {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
+	return d.data.CustomCommand
+}
+
+// SetCustomCommand synchronizes access to ServerData.CustomCommand
+func (d *SyncServerData) SetCustomCommand(value string) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.data.CustomCommand = value
+}
+
+// CommandPrefix synchronizes access to ServerData.CommandPrefix
+func (d *SyncServerData) CommandPrefix() string {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
+	return d.data.CommandPrefix
+}
+
+// SetCommandPrefix synchronizes access to ServerData.CommandPrefix
+func (d *SyncServerData) SetCommandPrefix(value string) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.data.CommandPrefix = value
+}*/
+
+// PostgresServerData wraps server-specific
+type PostgresServerData struct {
+	serverID              uint64
+	commandChannelID      uint64
+	tempChannelCategoryID uint64
+	customCommand         string
+	commandPrefix         string
+}
+
+// PostgresServersProvider is a ServerProvider implementation over PostgreSQL.
+type PostgresServersProvider struct {
 	address string
 	db      *sql.DB
 }
 
-// NewPostgresServerStore initializes a new instance of PostgresServerStore
-func NewPostgresServerStore(address string) *PostgresServerStore {
-	return &PostgresServerStore{address: address}
+type sqlScanner interface {
+	Scan(...interface{}) error
 }
 
-// Connect connects to database at the given address
-func (s *PostgresServerStore) Connect() error {
-	var err error
-	s.db, err = sql.Open("postgres", s.address)
+// NewPostgresServersProvider initializes a new instance of PostgresServersProvider
+func NewPostgresServersProvider(address string) (*PostgresServersProvider, error) {
+	db, err := sql.Open("postgres", address)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = s.db.Exec(createServersTable)
+	_, err = db.Exec(createServersTable)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &PostgresServersProvider{address: address, db: db}, nil
 }
 
 // Servers returns the list of all servers managed by the bot.
-func (s *PostgresServerStore) Servers() (ServersData, error) {
+func (p *PostgresServersProvider) Servers() (ServersData, error) {
 	result := ServersData{}
 
-	rows, err := s.db.Query(getServers)
+	rows, err := p.db.Query(getServers)
 	if err != nil {
 		return nil, err
 	}
 
 	for rows.Next() {
-		serverData := &ServerData{}
-		err := rows.Scan(&serverData.ServerID, &serverData.CommandChannelID, &serverData.TempChannelCategoryID, &serverData.CustomCommand, &serverData.CommandPrefix)
+		serverData, err := p.initializeServer(rows)
 		if err != nil {
 			return nil, err
 		}
 
-		result[serverData.ServerID] = serverData
+		result[serverData.ServerID()] = serverData
 	}
 
 	return result, nil
 }
 
-// AddServer adds a new server to the store.
-func (s *PostgresServerStore) AddServer(serverID uint64, tempChannelCategoryID uint64) (*ServerData, error) {
-	currentTime := time.Now().UTC()
-
-	_, err := s.db.Exec(addServer, serverID, tempChannelCategoryID, currentTime, currentTime)
-	if err != nil {
-		return nil, err
-	}
-
-	serverData := &ServerData{}
-	err = s.db.QueryRow(getServer, serverID).Scan(&serverData.ServerID, &serverData.CommandChannelID, &serverData.TempChannelCategoryID, &serverData.CustomCommand, &serverData.CommandPrefix)
+func (p *PostgresServersProvider) initializeServer(scanner sqlScanner) (ServerData, error) {
+	serverData := &PostgresServerData{}
+	err := scanner.Scan(&serverData.serverID, &serverData.commandChannelID, &serverData.tempChannelCategoryID, &serverData.customCommand, &serverData.commandPrefix)
 	if err != nil {
 		return nil, err
 	}
 
 	return serverData, nil
+}
+
+// AddServer adds a new server to the store.
+func (p *PostgresServersProvider) AddServer(serverID DiscordID, tempChannelCategoryID DiscordID) (ServerData, error) {
+	currentTime := time.Now().UTC()
+
+	_, err := p.db.Exec(addServer, serverID, tempChannelCategoryID, currentTime, currentTime)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.server(serverID)
+}
+
+func (p *PostgresServersProvider) server(serverID DiscordID) (ServerData, error) {
+	return p.initializeServer(p.db.QueryRow(getServer, serverID))
 }
 
 // UpdateCategoryID updates the temp channel category ID for a server.
