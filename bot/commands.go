@@ -67,8 +67,21 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	if serverIsSetup && serverData.CommandChannelID != noCustomCommandChannel && serverData.CommandChannelID != channelID {
-		// Command was posted in a channel that's not the command channel
-		return
+		commandChannelID := formatID(serverData.CommandChannelID)
+		channel, err := s.State.Channel(commandChannelID)
+		if !existsInState(err) || channel.GuildID != m.GuildID {
+			serverData.CommandChannelID = noCustomCommandChannel
+			err := b.store.UpdateCommandChannelID(serverData.ServerID, noCustomCommandChannel)
+			if err != nil {
+				s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
+				log.Fatalf("UpdateCommandChannelID failed: %v", err)
+			}
+
+			b.replyToSenderAndLog(s, m.ChannelID, `The custom command channel was deleted, and is therefore unset`)
+		} else {
+			// Command was posted in a channel that's not the command channel
+			return
+		}
 	}
 
 	commandText := strings.TrimPrefix(m.Content, prefix)

@@ -21,6 +21,10 @@ func parseID(id string) (uint64, error) {
 	return strconv.ParseUint(id, 10, 64)
 }
 
+func formatID(id uint64) string {
+	return strconv.FormatUint(id, 10)
+}
+
 func existsInState(err error) bool {
 	return err != discordgo.ErrStateNotFound
 }
