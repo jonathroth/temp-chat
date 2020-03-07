@@ -6,29 +6,71 @@ import (
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/jonathroth/temp-chat/config"
 	"github.com/jonathroth/temp-chat/state"
-)
-
-const (
-	makeChannelCommand     = "mkch"
-	defaultPrefix          = "!"
-	noCustomCommandChannel = 0
 )
 
 func (b *TempChannelBot) initCommands() map[string]*Command {
 	return map[string]*Command{
-		makeChannelCommand: &Command{SetupRequired: true, AdminOnly: false},
-		"set-mkch":         &Command{SetupRequired: true, AdminOnly: true},
-		"set-prefix":       &Command{SetupRequired: true, AdminOnly: true, Handler: b.setPrefixHandler},
-		"set-command-ch":   &Command{SetupRequired: true, AdminOnly: true, Handler: b.setCommandChannelHandler},
-		"setup":            &Command{SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
-		"help":             &Command{SetupRequired: false, AdminOnly: false, Handler: helpHandler},
+		config.DefaultMakeChannelCommand: &Command{SetupRequired: true, AdminOnly: false},
+		"set-mkch":                       &Command{SetupRequired: true, AdminOnly: true},
+		"set-prefix":                     &Command{SetupRequired: true, AdminOnly: true, Handler: b.setPrefixHandler},
+		"set-command-ch":                 &Command{SetupRequired: true, AdminOnly: true, Handler: b.setCommandChannelHandler},
+		"setup":                          &Command{SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
+		"help":                           &Command{SetupRequired: false, AdminOnly: false, Handler: helpHandler},
 	}
+}
+
+// CommandHandlerContext are the parameters passed to a command handler.
+type CommandHandlerContext struct {
+	Session *discordgo.Session
+	Event   *discordgo.MessageCreate
+
+	ServerID   state.DiscordID
+	ServerData state.ServerData
+
+	CommandName string
+	CommandArgs []string
+}
+
+func (c *CommandHandlerContext) replyUnformatted(message string) {
+	_, err := c.Session.ChannelMessageSend(c.Event.ChannelID, message)
+	if err != nil {
+		log.Fatalf("Failed sending message response: %v", err)
+	}
+}
+
+func (c *CommandHandlerContext) reply(message string, args ...interface{}) {
+	c.replyUnformatted("`" + fmt.Sprintf(message, args...) + "`")
+}
+
+func (c *CommandHandlerContext) logAndReply(message string, args ...interface{}) {
+	log.Printf(message, args...)
+	c.reply(message, args...)
+}
+
+func (c *CommandHandlerContext) categoryExists(categoryID string) bool {
+	channel, err := c.Session.State.Channel(categoryID)
+	return c.existsInState(err) && channel.GuildID == c.Event.GuildID && channel.Type == discordgo.ChannelTypeGuildCategory
+}
+
+func (c *CommandHandlerContext) textChannelExists(channelID string) bool {
+	channel, err := c.Session.State.Channel(channelID)
+	return c.existsInState(err) && channel.GuildID == c.Event.GuildID && channel.Type == discordgo.ChannelTypeGuildText
+}
+
+func (c *CommandHandlerContext) channelExists(channelID string) bool {
+	channel, err := c.Session.State.Channel(channelID)
+	return c.existsInState(err) && channel.GuildID == c.Event.GuildID
+}
+
+func (c *CommandHandlerContext) existsInState(err error) bool {
+	return err != discordgo.ErrStateNotFound
 }
 
 // CommandHandler is a handler func called when a command is successfully parsed.
 // An error returned by the handler will cause the bot to exit with a log.Fatal.
-type CommandHandler func(s *discordgo.Session, m *discordgo.MessageCreate, args []string, serverData *state.ServerData) error
+type CommandHandler func(*CommandHandlerContext) error
 
 // Command defines the logic and conditions required for a command to run.
 type Command struct {
@@ -44,16 +86,22 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	serverID, err := parseID(m.GuildID)
+	serverID, err := state.ParseDiscordID(m.GuildID)
 	if err != nil {
 		log.Fatalf("Failed to parse discord server ID: %v", err)
 	}
 
-	serverData, serverIsSetup := b.servers[serverID]
+	serverData, serverIsSetup := b.store.Server(serverID)
+	context := &CommandHandlerContext{
+		Session:    s,
+		Event:      m,
+		ServerID:   serverID,
+		ServerData: serverData,
+	}
 
-	prefix := defaultPrefix
-	if serverIsSetup && serverData.CommandPrefix != "" {
-		prefix = serverData.CommandPrefix
+	prefix := config.DefaultCommandPrefix
+	if serverIsSetup {
+		prefix = serverData.CommandPrefix()
 	}
 
 	if !strings.HasPrefix(m.Content, prefix) {
@@ -61,23 +109,15 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	channelID, err := parseID(m.ChannelID)
-	if err != nil {
-		log.Fatalf("Failed to parse discord channel ID: %v", err)
-	}
-
-	if serverIsSetup && serverData.CommandChannelID != noCustomCommandChannel && serverData.CommandChannelID != channelID {
-		commandChannelID := formatID(serverData.CommandChannelID)
-		channel, err := s.State.Channel(commandChannelID)
-		if !existsInState(err) || channel.GuildID != m.GuildID {
-			serverData.CommandChannelID = noCustomCommandChannel
-			err := b.store.UpdateCommandChannelID(serverData.ServerID, noCustomCommandChannel)
+	if serverIsSetup && serverData.HasCommandChannelID() && serverData.CommandChannelID().NotEquals(m.ChannelID) {
+		if !context.channelExists(serverData.CommandChannelID().RESTAPIFormat()) {
+			err := serverData.ClearCommandChannelID()
 			if err != nil {
-				s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
-				log.Fatalf("UpdateCommandChannelID failed: %v", err)
+				context.reply("An internal error has occurred")
+				log.Fatalf("ClearCommandChannelID failed: %v", err)
 			}
 
-			b.replyToSenderAndLog(s, m.ChannelID, `The custom command channel was deleted, and is therefore unset`)
+			context.logAndReply("The custom command channel was deleted, and is therefore unset")
 		} else {
 			// Command was posted in a channel that's not the command channel
 			return
@@ -87,31 +127,34 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 	commandText := strings.TrimPrefix(m.Content, prefix)
 	commandParts := strings.Split(commandText, " ")
 
-	if serverIsSetup && serverData.CustomCommand != "" && commandParts[0] == serverData.CustomCommand {
-		commandParts[0] = makeChannelCommand
+	if serverIsSetup && serverData.HasCustomCommand() && commandParts[0] == serverData.CustomCommand() {
+		commandParts[0] = config.DefaultMakeChannelCommand
 	}
+
+	context.CommandName = commandParts[0]
+	context.CommandArgs = commandParts[1:]
 
 	command, found := b.commands[commandParts[0]]
 	if !found {
-		b.replyToSenderAndLog(s, m.ChannelID, "Unknown command %q", commandParts[0])
+		context.reply("Unknown command %q", context.CommandName)
 		return
 	}
 
 	if command.SetupRequired && !serverIsSetup {
-		b.replyToSenderAndLog(s, m.ChannelID, "The bot hasn't been set up yet, please use %vsetup first", prefix)
+		context.logAndReply("The bot hasn't been set up yet, please use %vsetup first", prefix)
 		return
 	}
 
 	// TODO: handle command.AdminOnly
 
-	err = command.Handler(s, m, commandParts, serverData)
+	err = command.Handler(context)
 	if err != nil {
-		log.Fatalf("Command handler %v failed: %v", commandParts[0], err)
+		log.Fatalf("Command handler %v failed: %v", context.CommandName, err)
 	}
 }
 
-func helpHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string, serverData *state.ServerData) error {
-	_, err := s.ChannelMessageSend(m.ChannelID, "```"+`less
+func helpHandler(context *CommandHandlerContext) error {
+	context.replyUnformatted("```" + `less
 [TempChat]
 TempChat is a bot that creates temporary text channels for Discord voice chats.
 
@@ -134,136 +177,150 @@ As of now, the bot requires [Developer Mode] to be active in order to use the se
 !set-mkch [new-name] - Changes the !mkch command to the desired command name
 !set-mkch - Resets the command name to !mkch
 !set-command-ch [channel-name] - Sets a specific channel for the bot to read commands from, the bot will ignore all other channels.
-!set-command-ch - Removes the specified command channel`+"```")
-	if err != nil {
-		return err
-	}
-
+!set-command-ch - Removes the specified command channel` + "```")
 	return nil
 }
 
-func (b *TempChannelBot) setupHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string, serverData *state.ServerData) error {
-	if len(args) != 2 {
-		b.replyToSenderAndLog(s, m.ChannelID, "Category ID is missing")
+func (b *TempChannelBot) setupHandler(context *CommandHandlerContext) error {
+	if len(context.CommandArgs) < 1 {
+		context.reply("Missing category ID, please check %vhelp to see how to use the command", config.DefaultCommandPrefix)
+		return nil
+	} else if len(context.CommandArgs) > 1 {
+		context.reply("Too many arguments, please check %vhelp to see how to use the command", config.DefaultCommandPrefix)
 		return nil
 	}
 
-	categoryID, err := parseID(args[1])
+	categoryIDStr := context.CommandArgs[0]
+	categoryID, err := state.ParseDiscordID(categoryIDStr)
 	if err != nil {
-		b.replyToSenderAndLog(s, m.ChannelID, `Invalid category ID, please right click the category and click "Copy ID"`)
-		log.Printf("Invalid category ID %q: %v", args[1], err)
+		context.reply(`Invalid category ID, please right click the category and click "Copy ID"`)
+		log.Printf("Invalid category ID %q: %v", categoryIDStr, err) // TODO: consider log level error
 		return nil
 	}
 
-	channel, err := s.State.Channel(args[1])
-	if !existsInState(err) || channel.GuildID != m.GuildID {
-		b.replyToSenderAndLog(s, m.ChannelID, `This category doesn't exist, please right click the category and click "Copy ID"`)
+	if !context.channelExists(categoryIDStr) {
+		context.reply(`This category doesn't exist, please right click the category and click "Copy ID"`)
 		return nil
 	}
 
-	serverID, _ := parseID(m.GuildID)
-	_, alreadySetup := b.servers[serverID]
-	if alreadySetup {
-		serverData.TempChannelCategoryID = categoryID
-		err := b.store.UpdateCategoryID(serverID, categoryID)
-		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
-			return fmt.Errorf("UpdateCategoryID failed: %v", err)
-		}
-
-		b.replyToSenderAndLog(s, m.ChannelID, `Category ID updated successfully`)
-		return nil
-	} else {
-		newServerData, err := b.store.AddServer(serverID, categoryID)
-		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
-			return fmt.Errorf("AddServer failed: %v", err)
-		}
-
-		b.servers[serverID] = newServerData
-		b.replyToSenderAndLog(s, m.ChannelID, `Server was setup successfully, you may use %v%v`, defaultPrefix, makeChannelCommand)
-		return nil
-	}
-}
-
-func (b *TempChannelBot) setPrefixHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string, serverData *state.ServerData) error {
-	if len(args) > 2 {
-		b.replyToSenderAndLog(s, m.ChannelID, "Too many arguments, please check %vhelp to see how to use the command", serverData.CommandPrefix)
+	if !context.categoryExists(categoryIDStr) {
+		context.reply(`The given ID isn't of a category, please right click the category and click "Copy ID"`)
 		return nil
 	}
 
-	if len(args) == 1 {
-		if serverData.CommandPrefix == "" || serverData.CommandPrefix == defaultPrefix {
-			b.replyToSenderAndLog(s, m.ChannelID, "The prefix is already set to %v, please check %vhelp to see how to use the command", serverData.CommandPrefix, serverData.CommandPrefix)
+	serverAlreadySetup := context.ServerData != nil
+	if serverAlreadySetup {
+		if context.ServerData.TempChannelCategoryID() == categoryID {
+			context.reply("The server is already set up to work with the given category")
 			return nil
 		}
-		serverData.CommandPrefix = defaultPrefix
-		err := b.store.UpdateCommandPrefix(serverData.ServerID, defaultPrefix)
+
+		err := context.ServerData.SetTempChannelCategoryID(categoryID)
 		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
-			return fmt.Errorf("UpdateCommandPrefix failed: %v", err)
+			context.reply("An internal error has occurred")
+			return fmt.Errorf("SetTempChannelCategoryID failed: %v", err)
 		}
-	} else if len(args) == 2 {
-		newPrefix := args[1]
+
+		context.reply("Category ID updated successfully")
+		return nil
+	}
+
+	err = b.store.AddServer(context.ServerID, categoryID)
+	if err != nil {
+		context.reply("An internal error has occurred")
+		return fmt.Errorf("AddServer failed: %v", err)
+	}
+
+	context.logAndReply("Server was setup successfully, you may use %v%v", config.DefaultCommandPrefix, config.DefaultMakeChannelCommand)
+	return nil
+}
+
+func (b *TempChannelBot) setPrefixHandler(context *CommandHandlerContext) error {
+	if len(context.CommandArgs) > 1 {
+		context.reply("Too many arguments, please check %vhelp to see how to use the command", context.ServerData.CommandPrefix())
+		return nil
+	}
+
+	if len(context.CommandArgs) == 0 {
+		if !context.ServerData.HasDifferentPrefix() {
+			context.reply("The prefix is already set to %v, please check %vhelp to see how to use the command", config.DefaultCommandPrefix, config.DefaultCommandPrefix)
+			return nil
+		}
+
+		err := context.ServerData.ResetCommandPrefix()
+		if err != nil {
+			context.reply("An internal error has occurred")
+			return fmt.Errorf("ResetCommandPrefix failed: %v", err)
+		}
+
+		context.reply("Prefix reset successfully")
+	} else if len(context.CommandArgs) == 1 {
+		newPrefix := context.CommandArgs[0]
 		if len(newPrefix) != 1 {
-			b.replyToSenderAndLog(s, m.ChannelID, "The prefix must be exactly 1 character")
+			context.reply("The prefix must be exactly 1 character")
 			return nil
 		}
 
-		serverData.CommandPrefix = newPrefix
-		err := b.store.UpdateCommandPrefix(serverData.ServerID, newPrefix)
+		// TODO: validate prefix is a symbol character
+
+		err := context.ServerData.SetCustomCommandPrefix(newPrefix)
 		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
-			return fmt.Errorf("UpdateCommandPrefix failed: %v", err)
+			context.reply("An internal error has occurred")
+			return fmt.Errorf("SetCustomCommandPrefix failed: %v", err)
 		}
+
+		context.reply("Prefix changed successfully")
 	}
-	b.replyToSenderAndLog(s, m.ChannelID, "Prefix changed successfully")
 	return nil
 }
 
-func (b *TempChannelBot) setCommandChannelHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string, serverData *state.ServerData) error {
-	if len(args) > 2 {
-		b.replyToSenderAndLog(s, m.ChannelID, "Too many arguments, please check %vhelp to see how to use the command", serverData.CommandPrefix)
+func (b *TempChannelBot) setCommandChannelHandler(context *CommandHandlerContext) error {
+	if len(context.CommandArgs) > 1 {
+		context.reply("Too many arguments, please check %vhelp to see how to use the command", context.ServerData.CommandPrefix())
 		return nil
 	}
 
-	if len(args) == 1 {
-		if serverData.CommandChannelID == noCustomCommandChannel {
-			b.replyToSenderAndLog(s, m.ChannelID, `The custom command channel wasn't set yet, please check %vhelp to see how to use the command`, serverData.CommandPrefix)
+	if len(context.CommandArgs) == 0 {
+		if !context.ServerData.HasCommandChannelID() {
+			context.reply("The custom command channel wasn't set yet, please check %vhelp to see how to use the command", context.ServerData.CommandPrefix())
 			return nil
 		}
 
-		serverData.CommandChannelID = noCustomCommandChannel
-		err := b.store.UpdateCommandChannelID(serverData.ServerID, noCustomCommandChannel)
+		err := context.ServerData.ClearCommandChannelID()
 		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
-			return fmt.Errorf("UpdateCommandChannelID failed: %v", err)
+			context.reply("An internal error has occurred")
+			return fmt.Errorf("ClearCommandChannelID failed: %v", err)
 		}
 
-		b.replyToSenderAndLog(s, m.ChannelID, `Specific command channel removed successfully"`)
+		context.reply("Removed specific command channel successfully")
 		return nil
-	} else if len(args) == 2 {
-		channelID, err := parseID(args[1])
+	} else if len(context.CommandArgs) == 1 {
+		channelIDStr := context.CommandArgs[0]
+
+		channelID, err := state.ParseDiscordID(channelIDStr)
 		if err != nil {
-			b.replyToSenderAndLog(s, m.ChannelID, `Invalid channel ID, please right click the channel and click "Copy ID"`)
-			log.Printf("Invalid category ID %q: %v", args[1], err)
+			context.reply(`Invalid channel ID, please right click the channel and click "Copy ID"`)
+			log.Printf("Invalid channel ID %q: %v", channelIDStr, err) // TODO: consider log level error
 			return nil
 		}
 
-		channel, err := s.State.Channel(args[1])
-		if !existsInState(err) || channel.GuildID != m.GuildID {
-			b.replyToSenderAndLog(s, m.ChannelID, `This channel doesn't exist, please right click the channel and click "Copy ID"`)
+		if !context.channelExists(channelIDStr) {
+			context.reply(`This channel doesn't exist, please right click the channel and click "Copy ID"`)
 			return nil
 		}
 
-		serverData.CommandChannelID = channelID
-		err = b.store.UpdateCommandChannelID(serverData.ServerID, channelID)
-		if err != nil {
-			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
-			return fmt.Errorf("UpdateCommandChannelID failed: %v", err)
+		if !context.textChannelExists(channelIDStr) {
+			context.reply(`The requested channel isn't a text channel, please right click the channel and click "Copy ID"`)
+			return nil
 		}
 
-		b.replyToSenderAndLog(s, m.ChannelID, `Specific command channel set successfully`)
+		err = context.ServerData.SetCommandChannelID(channelID)
+		if err != nil {
+			context.reply("An internal error has occurred")
+			return fmt.Errorf("SetCommandChannelID failed: %v", err)
+		}
+
+		context.reply("Specific command channel set successfully")
 		return nil
 	}
 
