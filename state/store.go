@@ -18,6 +18,11 @@ func ParseDiscordID(id string) (DiscordID, error) {
 	return DiscordID(discordID), nil
 }
 
+// Equals returns whether a Discord API ID is equal to this ID.
+func (i DiscordID) Equals(apiID string) bool {
+	return apiID == i.String()
+}
+
 // RESTAPIFormat returns the Discord ID in the Discord REST API format.
 func (i DiscordID) RESTAPIFormat() string {
 	return strconv.FormatUint(uint64(i), 10)
@@ -59,7 +64,7 @@ type ServerData interface {
 	// SetCustomCommand sets the replacement name for the make-temp-channel command.
 	SetCustomCommand(value string) error
 	// ResetCustomCommand resets the make-temp-channel command name to default.
-	ResetCustomCommand(value string) error
+	ResetCustomCommand() error
 	// HasCustomCommand returns whether the make-temp-channel was assigned an alternative name.
 	HasCustomCommand() bool
 }

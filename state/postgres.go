@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jonathroth/temp-chat/config"
+
 	// PostgreSQL package driver, used by sql.Open()
 	_ "github.com/lib/pq"
 )
@@ -27,83 +29,6 @@ const (
 	updateCommandChannelID = `UPDATE servers SET (command_channel_id, last_modified_timestamp) = ($2, $3) WHERE server_id = $1;`
 	updateCommandPrefix    = `UPDATE servers SET (command_prefix, last_modified_timestamp) = ($2, $3) WHERE server_id = $1;`
 )
-
-/*
-// SyncServerData synchronizes read/writes to the server data.
-type SyncServerData struct {
-	data  *ServerData
-	mutex sync.RWMutex
-}
-
-// NewSyncServerData initializes a new instance of SyncServerData.
-func NewSyncServerData(data *ServerData) *SyncServerData {
-	return &SyncServerData{data: data}
-}
-
-// CommandChannelID synchronizes access to ServerData.CommandChannelID
-func (d *SyncServerData) CommandChannelID() uint64 {
-	d.mutex.RLock()
-	defer d.mutex.RUnlock()
-	return d.data.CommandChannelID
-}
-
-// SetCommandChannelID synchronizes access to ServerData.CommandChannelID
-func (d *SyncServerData) SetCommandChannelID(value uint64) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	d.data.CommandChannelID = value
-}
-
-// TempChannelCategoryID synchronizes access to ServerData.TempChannelCategoryID
-func (d *SyncServerData) TempChannelCategoryID() uint64 {
-	d.mutex.RLock()
-	defer d.mutex.RUnlock()
-	return d.data.TempChannelCategoryID
-}
-
-// SetTempChannelCategoryID synchronizes access to ServerData.TempChannelCategoryID
-func (d *SyncServerData) SetTempChannelCategoryID(value uint64) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	d.data.TempChannelCategoryID = value
-}
-
-// CustomCommand synchronizes access to ServerData.CustomCommand
-func (d *SyncServerData) CustomCommand() string {
-	d.mutex.RLock()
-	defer d.mutex.RUnlock()
-	return d.data.CustomCommand
-}
-
-// SetCustomCommand synchronizes access to ServerData.CustomCommand
-func (d *SyncServerData) SetCustomCommand(value string) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	d.data.CustomCommand = value
-}
-
-// CommandPrefix synchronizes access to ServerData.CommandPrefix
-func (d *SyncServerData) CommandPrefix() string {
-	d.mutex.RLock()
-	defer d.mutex.RUnlock()
-	return d.data.CommandPrefix
-}
-
-// SetCommandPrefix synchronizes access to ServerData.CommandPrefix
-func (d *SyncServerData) SetCommandPrefix(value string) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	d.data.CommandPrefix = value
-}*/
-
-// PostgresServerData wraps server-specific
-type PostgresServerData struct {
-	serverID              uint64
-	commandChannelID      uint64
-	tempChannelCategoryID uint64
-	customCommand         string
-	commandPrefix         string
-}
 
 // PostgresServersProvider is a ServerProvider implementation over PostgreSQL.
 type PostgresServersProvider struct {
@@ -177,25 +102,88 @@ func (p *PostgresServersProvider) server(serverID DiscordID) (ServerData, error)
 	return p.initializeServer(p.db.QueryRow(getServer, serverID))
 }
 
-// UpdateCategoryID updates the temp channel category ID for a server.
-func (s *PostgresServerStore) UpdateCategoryID(serverID uint64, newCategoryID uint64) error {
-	return assertOneChange(s.db.Exec(updateCategoryID, serverID, newCategoryID, time.Now().UTC()))
+// PostgresServerData wraps server-specific
+type PostgresServerData struct {
+	serverID              DiscordID
+	commandChannelID      DiscordID
+	tempChannelCategoryID DiscordID
+	customCommand         string
+	commandPrefix         string
+	db                    *sql.DB
 }
 
-// UpdateCustomCommand updates the custom command for a server.
-func (s *PostgresServerStore) UpdateCustomCommand(serverID uint64, customCommand string) error {
-	return assertOneChange(s.db.Exec(updateCustomCommand, serverID, customCommand, time.Now().UTC()))
-
+// ServerID returns the ID of the server whose data is saved in this object.
+func (d *PostgresServerData) ServerID() DiscordID {
+	return d.serverID
 }
 
-// UpdateCommandChannelID updates the custom command channel ID for a server.
-func (s *PostgresServerStore) UpdateCommandChannelID(serverID uint64, commandChannelID uint64) error {
-	return assertOneChange(s.db.Exec(updateCommandChannelID, serverID, commandChannelID, time.Now().UTC()))
+// TempChannelCategoryID is the category Discord ID of the category to create temporary chat channels in.
+func (d *PostgresServerData) TempChannelCategoryID() DiscordID {
+	return d.tempChannelCategoryID
 }
 
-// UpdateCommandPrefix updates the command prefix for a server.
-func (s *PostgresServerStore) UpdateCommandPrefix(serverID uint64, newPrefix string) error {
-	return assertOneChange(s.db.Exec(updateCommandPrefix, serverID, newPrefix, time.Now().UTC()))
+// SetTempChannelCategoryID sets a new channel category.
+func (d *PostgresServerData) SetTempChannelCategoryID(value DiscordID) error {
+	d.tempChannelCategoryID = value
+	return assertOneChange(d.db.Exec(updateCategoryID, d.serverID, value, time.Now().UTC()))
+}
+
+// CommandPrefix returns the server's specific command prefix.
+func (d *PostgresServerData) CommandPrefix() string {
+	return d.commandPrefix
+}
+
+// SetCommandPrefix changes the command prefix to the new prefix
+func (d *PostgresServerData) SetCommandPrefix(value string) error {
+	d.commandPrefix = value
+	return assertOneChange(d.db.Exec(updateCommandPrefix, d.serverID, value, time.Now().UTC()))
+}
+
+// ResetCommandPrefix resets the prefix to the default value.
+func (d *PostgresServerData) ResetCommandPrefix() error {
+	return d.SetCommandPrefix(config.DefaultCommandPrefix)
+}
+
+// CommandChannelID is the ID of the channel the bot will exclusively receive commands on.
+func (d *PostgresServerData) CommandChannelID() DiscordID {
+	return d.commandChannelID
+}
+
+// SetCommandChannelID sets a specific command channel.
+func (d *PostgresServerData) SetCommandChannelID(value DiscordID) error {
+	d.commandChannelID = value
+	return assertOneChange(d.db.Exec(updateCommandChannelID, d.serverID, value, time.Now().UTC()))
+}
+
+// ClearCommandChannelID removes the specific command channel.
+func (d *PostgresServerData) ClearCommandChannelID() error {
+	return d.SetCommandChannelID(DiscordIDNone)
+}
+
+// HasCommandChannelID returns whether the specific command channel is set.
+func (d *PostgresServerData) HasCommandChannelID() bool {
+	return d.commandChannelID == DiscordIDNone
+}
+
+// CustomCommand is a replacement name for the make-temp-channel command name.
+func (d *PostgresServerData) CustomCommand() string {
+	return d.customCommand
+}
+
+// SetCustomCommand sets the replacement name for the make-temp-channel command.
+func (d *PostgresServerData) SetCustomCommand(value string) error {
+	d.customCommand = value
+	return assertOneChange(d.db.Exec(updateCustomCommand, d.serverID, value, time.Now().UTC()))
+}
+
+// ResetCustomCommand resets the make-temp-channel command name to default.
+func (d *PostgresServerData) ResetCustomCommand() error {
+	return d.SetCustomCommand("")
+}
+
+// HasCustomCommand returns whether the make-temp-channel was assigned an alternative name.
+func (d *PostgresServerData) HasCustomCommand() bool {
+	return d.CustomCommand() != ""
 }
 
 func assertOneChange(sqlResult sql.Result, err error) error {
