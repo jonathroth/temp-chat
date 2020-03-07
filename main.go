@@ -30,10 +30,14 @@ func main() {
 		log.Fatalf("Failed initializing discord connection: %v", err)
 	}
 
-	store := state.NewPostgresServerStore(postgresAddr)
-	err = store.Connect()
+	serversProvider, err := state.NewPostgresServersProvider(postgresAddr)
 	if err != nil {
 		log.Fatalf("Failed connecting to the database: %v", err)
+	}
+
+	store, err := state.NewSyncServerStore(serversProvider)
+	if err != nil {
+		log.Fatalf("Failed initializing server store: %v", err)
 	}
 
 	tempChannelBot, err := bot.NewTempChannelBot(session, store)

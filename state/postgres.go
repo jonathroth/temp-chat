@@ -77,7 +77,7 @@ func (p *PostgresServersProvider) Servers() (ServersData, error) {
 }
 
 func (p *PostgresServersProvider) initializeServer(scanner sqlScanner) (ServerData, error) {
-	serverData := &PostgresServerData{}
+	serverData := NewPostgresServerData(p.db)
 	err := scanner.Scan(&serverData.serverID, &serverData.commandChannelID, &serverData.tempChannelCategoryID, &serverData.customCommand, &serverData.commandPrefix)
 	if err != nil {
 		return nil, err
@@ -112,6 +112,11 @@ type PostgresServerData struct {
 	db                    *sql.DB
 }
 
+// NewPostgresServerData initializes a new instance of PostgresServerData
+func NewPostgresServerData(db *sql.DB) *PostgresServerData {
+	return &PostgresServerData{db: db}
+}
+
 // ServerID returns the ID of the server whose data is saved in this object.
 func (d *PostgresServerData) ServerID() DiscordID {
 	return d.serverID
@@ -133,15 +138,20 @@ func (d *PostgresServerData) CommandPrefix() string {
 	return d.commandPrefix
 }
 
-// SetCommandPrefix changes the command prefix to the new prefix
-func (d *PostgresServerData) SetCommandPrefix(value string) error {
+// SetCustomCommandPrefix changes the command prefix to the a custom prefix.
+func (d *PostgresServerData) SetCustomCommandPrefix(value string) error {
 	d.commandPrefix = value
 	return assertOneChange(d.db.Exec(updateCommandPrefix, d.serverID, value, time.Now().UTC()))
 }
 
 // ResetCommandPrefix resets the prefix to the default value.
 func (d *PostgresServerData) ResetCommandPrefix() error {
-	return d.SetCommandPrefix(config.DefaultCommandPrefix)
+	return d.SetCustomCommandPrefix(config.DefaultCommandPrefix)
+}
+
+// HasDifferentPrefix returns whether the prefix was changed or not.
+func (d *PostgresServerData) HasDifferentPrefix() bool {
+	return d.commandPrefix != config.DefaultCommandPrefix
 }
 
 // CommandChannelID is the ID of the channel the bot will exclusively receive commands on.
@@ -162,7 +172,7 @@ func (d *PostgresServerData) ClearCommandChannelID() error {
 
 // HasCommandChannelID returns whether the specific command channel is set.
 func (d *PostgresServerData) HasCommandChannelID() bool {
-	return d.commandChannelID == DiscordIDNone
+	return d.commandChannelID != DiscordIDNone
 }
 
 // CustomCommand is a replacement name for the make-temp-channel command name.

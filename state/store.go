@@ -23,6 +23,11 @@ func (i DiscordID) Equals(apiID string) bool {
 	return apiID == i.String()
 }
 
+// NotEquals returns whether a Discord API ID is not equal to this ID.
+func (i DiscordID) NotEquals(apiID string) bool {
+	return !i.Equals(apiID)
+}
+
 // RESTAPIFormat returns the Discord ID in the Discord REST API format.
 func (i DiscordID) RESTAPIFormat() string {
 	return strconv.FormatUint(uint64(i), 10)
@@ -45,10 +50,12 @@ type ServerData interface {
 
 	// CommandPrefix returns the server's specific command prefix.
 	CommandPrefix() string
-	// SetCommandPrefix changes the command prefix to the new prefix
-	SetCommandPrefix(value string) error
+	// SetCustomCommandPrefix changes the command prefix to the a custom prefix.
+	SetCustomCommandPrefix(value string) error
 	// ResetCommandPrefix resets the prefix to the default value.
 	ResetCommandPrefix() error
+	// HasDifferentPrefix returns whether the prefix was changed or not.
+	HasDifferentPrefix() bool
 
 	// CommandChannelID is the ID of the channel the bot will exclusively receive commands on.
 	CommandChannelID() DiscordID
@@ -75,10 +82,10 @@ type ServersData map[DiscordID]ServerData
 // ServerStore is used by the bot to access specific server data and add new servers
 type ServerStore interface {
 	// Server returns the data of a specific server managed by the bot.
-	Server(serverID DiscordID) (ServerData, error)
+	Server(serverID DiscordID) (data ServerData, inStore bool)
 
 	// AddServer adds a new server to the store.
-	AddServer(serverID DiscordID, tempChannelCategoryID DiscordID) (ServerData, error)
+	AddServer(serverID DiscordID, tempChannelCategoryID DiscordID) error
 }
 
 // ServersProvider provides the server data to the store from the database.
