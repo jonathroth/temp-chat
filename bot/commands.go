@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	makeChannelCommand = "mkch"
-	defaultPrefix      = "!"
+	makeChannelCommand     = "mkch"
+	defaultPrefix          = "!"
+	noCustomCommandChannel = 0
 )
 
 func (b *TempChannelBot) initCommands() map[string]*Command {
@@ -19,7 +20,7 @@ func (b *TempChannelBot) initCommands() map[string]*Command {
 		makeChannelCommand: &Command{SetupRequired: true, AdminOnly: false},
 		"set-mkch":         &Command{SetupRequired: true, AdminOnly: true},
 		"set-prefix":       &Command{SetupRequired: true, AdminOnly: true, Handler: b.setPrefixHandler},
-		"set-command-ch":   &Command{SetupRequired: true, AdminOnly: true},
+		"set-command-ch":   &Command{SetupRequired: true, AdminOnly: true, Handler: b.setCommandChannelHandler},
 		"setup":            &Command{SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
 		"help":             &Command{SetupRequired: false, AdminOnly: false, Handler: helpHandler},
 	}
@@ -45,7 +46,7 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 
 	serverID, err := parseID(m.GuildID)
 	if err != nil {
-		log.Fatalf("Failed to parse discord ID: %v", err)
+		log.Fatalf("Failed to parse discord server ID: %v", err)
 	}
 
 	serverData, serverIsSetup := b.servers[serverID]
@@ -57,6 +58,16 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 
 	if !strings.HasPrefix(m.Content, prefix) {
 		// Not a command, ignore.
+		return
+	}
+
+	channelID, err := parseID(m.ChannelID)
+	if err != nil {
+		log.Fatalf("Failed to parse discord channel ID: %v", err)
+	}
+
+	if serverIsSetup && serverData.CommandChannelID != noCustomCommandChannel && serverData.CommandChannelID != channelID {
+		// Command was posted in a channel that's not the command channel
 		return
 	}
 
@@ -86,15 +97,6 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 	}
 }
 
-func (b *TempChannelBot) replyToSenderAndLog(s *discordgo.Session, channelID string, message string, args ...interface{}) {
-	log.Printf(message, args...)
-
-	_, err := s.ChannelMessageSend(channelID, fmt.Sprintf(message, args...))
-	if err != nil {
-		log.Fatalf("Failed sending message response: %v", err)
-	}
-}
-
 func helpHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string, serverData *state.ServerData) error {
 	_, err := s.ChannelMessageSend(m.ChannelID, "```"+`less
 [TempChat]
@@ -102,6 +104,8 @@ TempChat is a bot that creates temporary text channels for Discord voice chats.
 
 The bot will give permission to any new user that joins the voice chat, and revoke the permission to any user that leaves it.
 All channels are created under a specific category, the category must give the bot account the [Manage Channel] permission, and must deny the [Read Text Channels & See Voice Channels] from @everyone
+
+As of now, the bot requires [Developer Mode] to be active in order to use the setup/configuration commands.
 
 #Commands:
 !help - Displays this menu
@@ -171,13 +175,13 @@ func (b *TempChannelBot) setupHandler(s *discordgo.Session, m *discordgo.Message
 
 func (b *TempChannelBot) setPrefixHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string, serverData *state.ServerData) error {
 	if len(args) > 2 {
-		b.replyToSenderAndLog(s, m.ChannelID, "Too many arguments, please check !help to see how to use the command")
+		b.replyToSenderAndLog(s, m.ChannelID, "Too many arguments, please check %vhelp to see how to use the command", serverData.CommandPrefix)
 		return nil
 	}
 
 	if len(args) == 1 {
 		if serverData.CommandPrefix == "" || serverData.CommandPrefix == defaultPrefix {
-			b.replyToSenderAndLog(s, m.ChannelID, "The prefix is already set to %v, please check !help to see how to use the command", defaultPrefix)
+			b.replyToSenderAndLog(s, m.ChannelID, "The prefix is already set to %v, please check %vhelp to see how to use the command", serverData.CommandPrefix, serverData.CommandPrefix)
 			return nil
 		}
 		serverData.CommandPrefix = defaultPrefix
@@ -204,6 +208,51 @@ func (b *TempChannelBot) setPrefixHandler(s *discordgo.Session, m *discordgo.Mes
 	return nil
 }
 
-func existsInState(err error) bool {
-	return err != discordgo.ErrStateNotFound
+func (b *TempChannelBot) setCommandChannelHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string, serverData *state.ServerData) error {
+	if len(args) > 2 {
+		b.replyToSenderAndLog(s, m.ChannelID, "Too many arguments, please check %vhelp to see how to use the command", serverData.CommandPrefix)
+		return nil
+	}
+
+	if len(args) == 1 {
+		if serverData.CommandChannelID == noCustomCommandChannel {
+			b.replyToSenderAndLog(s, m.ChannelID, `The custom command channel wasn't set yet, please check %vhelp to see how to use the command`, serverData.CommandPrefix)
+			return nil
+		}
+
+		serverData.CommandChannelID = noCustomCommandChannel
+		err := b.store.UpdateCommandChannelID(serverData.ServerID, noCustomCommandChannel)
+		if err != nil {
+			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
+			return fmt.Errorf("UpdateCommandChannelID failed: %v", err)
+		}
+
+		b.replyToSenderAndLog(s, m.ChannelID, `Specific command channel removed successfully"`)
+		return nil
+	} else if len(args) == 2 {
+		channelID, err := parseID(args[1])
+		if err != nil {
+			b.replyToSenderAndLog(s, m.ChannelID, `Invalid channel ID, please right click the channel and click "Copy ID"`)
+			log.Printf("Invalid category ID %q: %v", args[1], err)
+			return nil
+		}
+
+		channel, err := s.State.Channel(args[1])
+		if !existsInState(err) || channel.GuildID != m.GuildID {
+			b.replyToSenderAndLog(s, m.ChannelID, `This channel doesn't exist, please right click the channel and click "Copy ID"`)
+			return nil
+		}
+
+		serverData.CommandChannelID = channelID
+		err = b.store.UpdateCommandChannelID(serverData.ServerID, channelID)
+		if err != nil {
+			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
+			return fmt.Errorf("UpdateCommandChannelID failed: %v", err)
+		}
+
+		b.replyToSenderAndLog(s, m.ChannelID, `Specific command channel set successfully`)
+		return nil
+	}
+
+	return nil
 }
