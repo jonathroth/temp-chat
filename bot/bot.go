@@ -10,6 +10,8 @@ type TempChannelBot struct {
 	store     state.ServerStore
 	servers   state.ServersData
 	botUserID string
+
+	commands map[string]*Command
 }
 
 // NewTempChannelBot initializes a new instance of TempChannelBot.
@@ -29,5 +31,7 @@ func NewTempChannelBot(s *discordgo.Session, store state.ServerStore) (*TempChan
 		servers:   servers,
 		botUserID: user.ID,
 	}
+	bot.commands = bot.initCommands()
+
 	return bot, nil
 }
