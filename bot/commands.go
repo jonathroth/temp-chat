@@ -181,7 +181,11 @@ func (b *TempChannelBot) setPrefixHandler(s *discordgo.Session, m *discordgo.Mes
 			return nil
 		}
 		serverData.CommandPrefix = defaultPrefix
-		b.store.UpdateCommandPrefix(serverData.ServerID, defaultPrefix)
+		err := b.store.UpdateCommandPrefix(serverData.ServerID, defaultPrefix)
+		if err != nil {
+			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
+			return fmt.Errorf("UpdateCommandPrefix failed: %v", err)
+		}
 	} else if len(args) == 2 {
 		newPrefix := args[1]
 		if len(newPrefix) != 1 {
@@ -190,7 +194,11 @@ func (b *TempChannelBot) setPrefixHandler(s *discordgo.Session, m *discordgo.Mes
 		}
 
 		serverData.CommandPrefix = newPrefix
-		b.store.UpdateCommandPrefix(serverData.ServerID, newPrefix)
+		err := b.store.UpdateCommandPrefix(serverData.ServerID, newPrefix)
+		if err != nil {
+			s.ChannelMessageSend(m.ChannelID, "An internal error has occurred")
+			return fmt.Errorf("UpdateCommandPrefix failed: %v", err)
+		}
 	}
 	b.replyToSenderAndLog(s, m.ChannelID, "Prefix changed successfully")
 	return nil
