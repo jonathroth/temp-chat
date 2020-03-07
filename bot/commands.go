@@ -104,11 +104,13 @@ The bot will give permission to any new user that joins the voice chat, and revo
 All channels are created under a specific category, the category must give the bot account the [Manage Channel] permission, and must deny the [Read Text Channels & See Voice Channels] from @everyone
 
 #Commands:
-[Before Setup]
 !help - Displays this menu
-!setup [category-id] - Sets up the bot
+
+[Before Setup]
+!setup [category-id] - Configured the category ID the bot should create the temporary channels in
 
 [After Setup]
+!setup [category-id] - Changes the category ID to new category
 !mkch - Creates a temporary voice channel for the users in your voice chat
 !set-prefix [new-prefix] - Changes the command prefix
 [?]set-prefix - Resets the command prefix to !
