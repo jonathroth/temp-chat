@@ -45,13 +45,22 @@ func main() {
 		log.Fatalf("Failed initializing bot: %v", err)
 	}
 
+	waitForBot(session, tempChannelBot)
+
+	err = session.Close()
+	if err != nil {
+		log.Fatalf("Bot ClosE() failed: %v", err)
+	}
+}
+
+func waitForBot(session *discordgo.Session, tempChannelBot *bot.TempChannelBot) {
 	defer tempChannelBot.CleanChannels()
 
 	session.AddHandler(tempChannelBot.MessageCreate)
 	session.AddHandler(tempChannelBot.ChannelDelete)
 	session.AddHandler(tempChannelBot.VoiceStatusUpdate)
 
-	err = session.Open()
+	err := session.Open()
 	if err != nil {
 		log.Fatalf("Failed connecting to discord: %v", err)
 	}
@@ -62,6 +71,4 @@ func main() {
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	exitSignal := <-sc
 	log.Printf("Got signal %v, exiting", exitSignal.String())
-
-	session.Close()
 }
