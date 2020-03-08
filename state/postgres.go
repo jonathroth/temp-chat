@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jonathroth/temp-chat/config"
+	"github.com/jonathroth/temp-chat/consts"
 
 	// PostgreSQL package driver, used by sql.Open()
 	_ "github.com/lib/pq"
@@ -146,12 +146,12 @@ func (d *PostgresServerData) SetCustomCommandPrefix(value string) error {
 
 // ResetCommandPrefix resets the prefix to the default value.
 func (d *PostgresServerData) ResetCommandPrefix() error {
-	return d.SetCustomCommandPrefix(config.DefaultCommandPrefix)
+	return d.SetCustomCommandPrefix(consts.DefaultCommandPrefix)
 }
 
 // HasDifferentPrefix returns whether the prefix was changed or not.
 func (d *PostgresServerData) HasDifferentPrefix() bool {
-	return d.commandPrefix != config.DefaultCommandPrefix
+	return d.commandPrefix != consts.DefaultCommandPrefix
 }
 
 // CommandChannelID is the ID of the channel the bot will exclusively receive commands on.

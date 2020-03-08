@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/jonathroth/temp-chat/config"
+	"github.com/jonathroth/temp-chat/consts"
 	"github.com/jonathroth/temp-chat/state"
 )
 
@@ -14,7 +14,7 @@ func (b *TempChannelBot) initCommands() map[string]*Command {
 	return map[string]*Command{
 		"help":                           &Command{SetupRequired: false, AdminOnly: false, Handler: helpHandler},
 		"setup":                          &Command{SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
-		config.DefaultMakeChannelCommand: &Command{SetupRequired: true, AdminOnly: false},
+		consts.DefaultMakeChannelCommand: &Command{SetupRequired: true, AdminOnly: false, Handler: b.mkch},
 		"set-mkch":                       &Command{SetupRequired: true, AdminOnly: true, Handler: b.setMkch},
 		"set-prefix":                     &Command{SetupRequired: true, AdminOnly: true, Handler: b.setPrefixHandler},
 		"set-command-ch":                 &Command{SetupRequired: true, AdminOnly: true, Handler: b.setCommandChannelHandler},
@@ -107,7 +107,7 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 	context.ServerID = serverID
 	context.ServerData = serverData
 
-	prefix := config.DefaultCommandPrefix
+	prefix := consts.DefaultCommandPrefix
 	if serverIsSetup {
 		prefix = serverData.CommandPrefix()
 	}
@@ -136,13 +136,13 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 	commandParts := strings.Split(commandText, " ")
 
 	if serverIsSetup && serverData.HasCustomCommand() && commandParts[0] == serverData.CustomCommand() {
-		commandParts[0] = config.DefaultMakeChannelCommand
+		commandParts[0] = consts.DefaultMakeChannelCommand
 	}
 
 	context.CommandName = commandParts[0]
 	context.CommandArgs = commandParts[1:]
 
-	if !config.ValidCommandLettersRegex.MatchString(context.CommandName) {
+	if !consts.ValidCommandLettersRegex.MatchString(context.CommandName) {
 		// Not a valid command, ignore
 		return
 	}
@@ -196,10 +196,10 @@ As of now, the bot requires [Developer Mode] to be active in order to use the se
 
 func (b *TempChannelBot) setupHandler(context *CommandHandlerContext) error {
 	if len(context.CommandArgs) < 1 {
-		context.reply("Missing category ID, please check %vhelp to see how to use the command", config.DefaultCommandPrefix)
+		context.reply("Missing category ID, please check %vhelp to see how to use the command", consts.DefaultCommandPrefix)
 		return nil
 	} else if len(context.CommandArgs) > 1 {
-		context.reply("Too many arguments, please check %vhelp to see how to use the command", config.DefaultCommandPrefix)
+		context.reply("Too many arguments, please check %vhelp to see how to use the command", consts.DefaultCommandPrefix)
 		return nil
 	}
 
@@ -244,7 +244,11 @@ func (b *TempChannelBot) setupHandler(context *CommandHandlerContext) error {
 		return fmt.Errorf("AddServer failed: %v", err)
 	}
 
-	context.logAndReply("Server was setup successfully, you may use %v%v", config.DefaultCommandPrefix, config.DefaultMakeChannelCommand)
+	context.logAndReply("Server was setup successfully, you may use %v%v", consts.DefaultCommandPrefix, consts.DefaultMakeChannelCommand)
+	return nil
+}
+
+func (b *TempChannelBot) mkch(context *CommandHandlerContext) error {
 	return nil
 }
 
@@ -256,7 +260,7 @@ func (b *TempChannelBot) setMkch(context *CommandHandlerContext) error {
 
 	if len(context.CommandArgs) == 0 {
 		if !context.ServerData.HasCustomCommand() {
-			context.reply("The command is already set to %v%v, please check %vhelp to see how to use the command", context.ServerData.CommandPrefix(), config.DefaultMakeChannelCommand, context.ServerData.CommandPrefix())
+			context.reply("The command is already set to %v%v, please check %vhelp to see how to use the command", context.ServerData.CommandPrefix(), consts.DefaultMakeChannelCommand, context.ServerData.CommandPrefix())
 			return nil
 		}
 
@@ -274,22 +278,22 @@ func (b *TempChannelBot) setMkch(context *CommandHandlerContext) error {
 			return nil
 		}
 
-		if len(newCommand) < config.MinCommandNameLength {
+		if len(newCommand) < consts.MinCommandNameLength {
 			ending := "s"
-			if config.MinCommandNameLength == 1 {
+			if consts.MinCommandNameLength == 1 {
 				ending = ""
 			}
-			context.reply("The command cannot be shorter than %v character%v", config.MinCommandNameLength, ending)
+			context.reply("The command cannot be shorter than %v character%v", consts.MinCommandNameLength, ending)
 			return nil
 		}
 
-		if len(newCommand) > config.MaxCommandNameLength {
-			context.reply("The command cannot be longer than %v characters", config.MaxCommandNameLength)
+		if len(newCommand) > consts.MaxCommandNameLength {
+			context.reply("The command cannot be longer than %v characters", consts.MaxCommandNameLength)
 			return nil
 		}
 
-		if !config.ValidCommandLettersRegex.MatchString(newCommand) {
-			context.reply("Invalid command name, the name can only contain %v", config.ValidCommandLettersDescription)
+		if !consts.ValidCommandLettersRegex.MatchString(newCommand) {
+			context.reply("Invalid command name, the name can only contain %v", consts.ValidCommandLettersDescription)
 			return nil
 		}
 
@@ -312,7 +316,7 @@ func (b *TempChannelBot) setPrefixHandler(context *CommandHandlerContext) error 
 
 	if len(context.CommandArgs) == 0 {
 		if !context.ServerData.HasDifferentPrefix() {
-			context.reply("The prefix is already set to %v, please check %vhelp to see how to use the command", config.DefaultCommandPrefix, config.DefaultCommandPrefix)
+			context.reply("The prefix is already set to %v, please check %vhelp to see how to use the command", consts.DefaultCommandPrefix, consts.DefaultCommandPrefix)
 			return nil
 		}
 
@@ -335,8 +339,8 @@ func (b *TempChannelBot) setPrefixHandler(context *CommandHandlerContext) error 
 			return nil
 		}
 
-		if !strings.Contains(config.ValidPrefixes, newPrefix) {
-			context.reply("Invalid prefix, please use one of the following: %v", config.ValidPrefixes)
+		if !strings.Contains(consts.ValidPrefixes, newPrefix) {
+			context.reply("Invalid prefix, please use one of the following: %v", consts.ValidPrefixes)
 			return nil
 		}
 
