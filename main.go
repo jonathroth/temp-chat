@@ -45,6 +45,8 @@ func main() {
 		log.Fatalf("Failed initializing bot: %v", err)
 	}
 	session.AddHandler(tempChannelBot.MessageCreate)
+	session.AddHandler(tempChannelBot.ChannelDelete)
+	session.AddHandler(tempChannelBot.VoiceStatusUpdate)
 
 	err = session.Open()
 	if err != nil {

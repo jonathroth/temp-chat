@@ -60,22 +60,64 @@ func (c *CommandHandlerContext) logAndReply(message string, args ...interface{})
 	c.reply(message, args...)
 }
 
+func (c *CommandHandlerContext) getUserVoiceChannelID(userID state.DiscordID) state.DiscordID {
+	guild, err := c.Session.State.Guild(c.Event.GuildID)
+	if err != nil {
+		log.Fatalf("Bot couldn't find a guild it got a message from: %v", err)
+	}
+
+	for _, voiceState := range guild.VoiceStates {
+		if voiceState.UserID == userID.RESTAPIFormat() {
+			id, err := state.ParseDiscordID(voiceState.ChannelID)
+			if err != nil {
+				log.Fatalf("Bot couldn't parse voice channel ID of user inside a voice channel: %v", err)
+			}
+
+			return id
+		}
+	}
+
+	return state.DiscordIDNone
+}
+
+func (c *CommandHandlerContext) getVoiceChannelParticipants(voiceChanelID state.DiscordID) []state.DiscordID {
+	guild, err := c.Session.State.Guild(c.Event.GuildID)
+	if err != nil {
+		log.Fatalf("Bot couldn't find a guild it got a message from: %v", err)
+	}
+
+	participants := []state.DiscordID{}
+
+	for _, voiceState := range guild.VoiceStates {
+		if voiceState.ChannelID == voiceChanelID.RESTAPIFormat() {
+			id, err := state.ParseDiscordID(voiceState.UserID)
+			if err != nil {
+				log.Fatalf("Bot couldn't parse voice channel ID of user inside a voice channel: %v", err)
+			}
+
+			participants = append(participants, id)
+		}
+	}
+
+	return participants
+}
+
 func (c *CommandHandlerContext) categoryExists(categoryID string) bool {
 	channel, err := c.Session.State.Channel(categoryID)
-	return c.existsInState(err) && channel.GuildID == c.Event.GuildID && channel.Type == discordgo.ChannelTypeGuildCategory
+	return existsInState(err) && channel.GuildID == c.Event.GuildID && channel.Type == discordgo.ChannelTypeGuildCategory
 }
 
 func (c *CommandHandlerContext) textChannelExists(channelID string) bool {
 	channel, err := c.Session.State.Channel(channelID)
-	return c.existsInState(err) && channel.GuildID == c.Event.GuildID && channel.Type == discordgo.ChannelTypeGuildText
+	return existsInState(err) && channel.GuildID == c.Event.GuildID && channel.Type == discordgo.ChannelTypeGuildText
 }
 
 func (c *CommandHandlerContext) channelExists(channelID string) bool {
 	channel, err := c.Session.State.Channel(channelID)
-	return c.existsInState(err) && channel.GuildID == c.Event.GuildID
+	return existsInState(err) && channel.GuildID == c.Event.GuildID
 }
 
-func (c *CommandHandlerContext) existsInState(err error) bool {
+func existsInState(err error) bool {
 	return err != discordgo.ErrStateNotFound
 }
 
@@ -249,6 +291,38 @@ func (b *TempChannelBot) setupHandler(context *CommandHandlerContext) error {
 }
 
 func (b *TempChannelBot) mkch(context *CommandHandlerContext) error {
+	authorID, err := state.ParseDiscordID(context.Event.Author.ID)
+	if err != nil {
+		return fmt.Errorf("Bot couldn't parse author ID of a message it just got: %v", err)
+	}
+
+	if !context.categoryExists(context.ServerData.TempChannelCategoryID().RESTAPIFormat()) {
+		context.reply("The temp channel category doesn't exist, please run %vsetup again", context.ServerData.CommandPrefix())
+		return nil
+	}
+
+	voiceChannelID := context.getUserVoiceChannelID(authorID)
+	if voiceChannelID == state.DiscordIDNone {
+		context.reply("You must be in a voice chat to use this command")
+		return nil
+	}
+
+	tempChannel, alreadyExists := b.tempChannels.GetTempChannelForVoiceChat(voiceChannelID)
+	if alreadyExists {
+		context.replyUnformatted(fmt.Sprintf("`A temp channel already exists for this voice chat` %v", tempChannel.channel.Mention()))
+		return nil
+	}
+
+	participants := context.getVoiceChannelParticipants(voiceChannelID)
+	tempChannel, err = NewTempChannel(context, voiceChannelID, participants)
+	if err != nil {
+		context.reply("Failed to create a temp channel, please make sure the bot has the right permissions")
+		log.Printf("Couldn't create temp channel: %v", err)
+		return nil
+	}
+
+	b.tempChannels.AddTempChannel(tempChannel)
+	context.replyUnformatted(fmt.Sprintf("`The temporary channel was created` %v", tempChannel.channel.Mention()))
 	return nil
 }
 
