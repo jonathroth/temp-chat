@@ -14,8 +14,8 @@ func (b *TempChannelBot) initCommands() map[string]*Command {
 	return map[string]*Command{
 		"help":                           &Command{SetupRequired: false, AdminOnly: false, Handler: helpHandler},
 		"setup":                          &Command{SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
-		consts.DefaultMakeChannelCommand: &Command{SetupRequired: true, AdminOnly: false, Handler: b.mkch},
-		"set-mkch":                       &Command{SetupRequired: true, AdminOnly: true, Handler: b.setMkch},
+		consts.DefaultMakeChannelCommand: &Command{SetupRequired: true, AdminOnly: false, Handler: b.mkchHandler},
+		"set-mkch":                       &Command{SetupRequired: true, AdminOnly: true, Handler: b.setMkchHandler},
 		"set-prefix":                     &Command{SetupRequired: true, AdminOnly: true, Handler: b.setPrefixHandler},
 		"set-command-ch":                 &Command{SetupRequired: true, AdminOnly: true, Handler: b.setCommandChannelHandler},
 	}
@@ -293,7 +293,7 @@ func (b *TempChannelBot) setupHandler(context *CommandHandlerContext) error {
 	return nil
 }
 
-func (b *TempChannelBot) mkch(context *CommandHandlerContext) error {
+func (b *TempChannelBot) mkchHandler(context *CommandHandlerContext) error {
 	authorID, err := state.ParseDiscordID(context.Event.Author.ID)
 	if err != nil {
 		return fmt.Errorf("Bot couldn't parse author ID of a message it just got: %v", err)
@@ -329,7 +329,7 @@ func (b *TempChannelBot) mkch(context *CommandHandlerContext) error {
 	return nil
 }
 
-func (b *TempChannelBot) setMkch(context *CommandHandlerContext) error {
+func (b *TempChannelBot) setMkchHandler(context *CommandHandlerContext) error {
 	if len(context.CommandArgs) > 1 {
 		context.reply("Too many arguments, please check %vhelp to see how to use the command", context.ServerData.CommandPrefix())
 		return nil
