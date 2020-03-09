@@ -63,6 +63,44 @@ func (c *CommandHandlerContext) logAndReply(message string, args ...interface{})
 	c.reply(message, args...)
 }
 
+func (c *CommandHandlerContext) canManageAllChannels() bool {
+	member, err := c.Session.State.Member(c.Event.GuildID, c.BotUserID.RESTAPIFormat())
+	if err != nil {
+		log.Printf("Bot couldn't find the bot in a server it's already in: %v", err) // TODO: error log?
+		return false
+	}
+
+	for _, roleID := range member.Roles {
+		role, err := c.Session.State.Role(c.Event.GuildID, roleID)
+		if err != nil {
+			log.Printf("Couldn't find a role the bot owns: %v", err) // TODO: error log?
+			return false
+		}
+
+		if role.Permissions&discordgo.PermissionManageChannels != 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *CommandHandlerContext) canManageChannelInCategory(categoryID state.DiscordID) bool {
+	category, err := c.Session.State.Channel(categoryID.RESTAPIFormat())
+	if err != nil {
+		log.Printf("Couldn't find category: %v", err)
+		return false
+	}
+
+	for _, permission := range category.PermissionOverwrites {
+		if permission.Allow&discordgo.PermissionManageChannels != 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (c *CommandHandlerContext) getUserVoiceChannelID(userID state.DiscordID) state.DiscordID {
 	guild, err := c.Session.State.Guild(c.Event.GuildID)
 	if err != nil {
@@ -264,6 +302,13 @@ func (b *TempChannelBot) setupHandler(context *CommandHandlerContext) error {
 	if !context.categoryExists(categoryIDStr) {
 		context.reply(`The given ID isn't of a category, please right click the category and click "Copy ID"`)
 		return nil
+	}
+
+	if !context.canManageAllChannels() {
+		if !context.canManageChannelInCategory(categoryID) {
+			context.reply(`The bot doesn't have the "Manage Channels" permission for this category.`)
+			return nil
+		}
 	}
 
 	serverAlreadySetup := context.ServerData != nil
