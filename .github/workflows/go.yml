@@ -2,7 +2,7 @@ name: Go
 
 on:
   push:
-    branches: [ master, ci ]
+    branches: [ master ]
   pull_request:
     branches: [ master ]
 
@@ -32,3 +32,12 @@ jobs:
 
     - name: Build
       run: go build -v .
+
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Run All Tests
+      run: go test -race -coverprofile=coverage.txt -covermode=atomic -v ./...
