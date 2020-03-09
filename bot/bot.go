@@ -1,6 +1,8 @@
 package bot
 
 import (
+	"fmt"
+
 	"github.com/bwmarrin/discordgo"
 	"github.com/jonathroth/temp-chat/state"
 )
@@ -8,7 +10,7 @@ import (
 // TempChannelBot contains all the handlers to discord events for the bot to operate.
 type TempChannelBot struct {
 	store     state.ServerStore
-	botUserID string
+	botUserID state.DiscordID
 
 	tempChannels *TempChannelList
 
@@ -22,9 +24,14 @@ func NewTempChannelBot(session *discordgo.Session, store state.ServerStore) (*Te
 		return nil, err
 	}
 
+	userID, err := state.ParseDiscordID(user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("Failed parsing self user ID: %v", err)
+	}
+
 	bot := &TempChannelBot{
 		store:        store,
-		botUserID:    user.ID,
+		botUserID:    userID,
 		tempChannels: NewTempChannelList(session),
 	}
 	bot.commands = bot.initCommands()

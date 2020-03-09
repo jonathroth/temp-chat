@@ -213,6 +213,11 @@ func createTempChannel(context *CommandHandlerContext, userIDs []state.DiscordID
 			Type: consts.PermissionTypeRole,
 			Deny: discordgo.PermissionReadMessages,
 		},
+		&discordgo.PermissionOverwrite{
+			ID:    context.BotUserID.RESTAPIFormat(),
+			Type:  consts.PermissionTypeMember,
+			Allow: discordgo.PermissionReadMessages | discordgo.PermissionManageChannels | discordgo.PermissionManageRoles,
+		},
 	}
 
 	for _, userID := range userIDs {

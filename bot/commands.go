@@ -26,6 +26,8 @@ type CommandHandlerContext struct {
 	Session *discordgo.Session
 	Event   *discordgo.MessageCreate
 
+	BotUserID state.DiscordID
+
 	ServerID   state.DiscordID
 	ServerData state.ServerData
 
@@ -36,10 +38,11 @@ type CommandHandlerContext struct {
 }
 
 // NewCommandHandlerContext initializes a new instance of CommandHandlerContext.
-func NewCommandHandlerContext(session *discordgo.Session, event *discordgo.MessageCreate) *CommandHandlerContext {
+func NewCommandHandlerContext(session *discordgo.Session, event *discordgo.MessageCreate, botUserID state.DiscordID) *CommandHandlerContext {
 	return &CommandHandlerContext{
 		Session:        session,
 		Event:          event,
+		BotUserID:      botUserID,
 		replyFormatter: backtickReplyFormatter,
 	}
 }
@@ -135,7 +138,7 @@ type Command struct {
 
 // MessageCreate is called whenever a message arrives in a server the bot is in.
 func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID == b.botUserID || m.Author.Bot {
+	if m.Author.ID == b.botUserID.RESTAPIFormat() || m.Author.Bot {
 		return
 	}
 
@@ -144,7 +147,7 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 		log.Fatalf("Failed to parse discord server ID: %v", err)
 	}
 
-	context := NewCommandHandlerContext(s, m)
+	context := NewCommandHandlerContext(s, m, b.botUserID)
 	serverData, serverIsSetup := b.store.Server(serverID)
 	context.ServerID = serverID
 	context.ServerData = serverData
