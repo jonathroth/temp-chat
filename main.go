@@ -68,7 +68,7 @@ func waitForBot(session *discordgo.Session, tempChannelBot *bot.TempChannelBot) 
 	log.Println("Bot is now running...")
 
 	sc := make(chan os.Signal, 1)
-	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
+	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	exitSignal := <-sc
 	log.Printf("Got signal %v, exiting", exitSignal.String())
 }
