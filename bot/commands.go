@@ -63,8 +63,8 @@ func (c *CommandHandlerContext) logAndReply(message string, args ...interface{})
 	c.reply(message, args...)
 }
 
-func (c *CommandHandlerContext) canManageAllChannels() bool {
-	member, err := c.Session.State.Member(c.Event.GuildID, c.BotUserID.RESTAPIFormat())
+func (c *CommandHandlerContext) hasServerPermission(userID state.DiscordID, wantedPermission int) bool {
+	member, err := c.Session.State.Member(c.Event.GuildID, userID.RESTAPIFormat())
 	if err != nil {
 		log.Printf("Bot couldn't find the bot in a server it's already in: %v", err) // TODO: error log?
 		return false
@@ -77,7 +77,7 @@ func (c *CommandHandlerContext) canManageAllChannels() bool {
 			return false
 		}
 
-		if role.Permissions&discordgo.PermissionManageChannels != 0 {
+		if role.Permissions&wantedPermission != 0 {
 			return true
 		}
 	}
@@ -85,15 +85,15 @@ func (c *CommandHandlerContext) canManageAllChannels() bool {
 	return false
 }
 
-func (c *CommandHandlerContext) canManageChannelInCategory(categoryID state.DiscordID) bool {
-	category, err := c.Session.State.Channel(categoryID.RESTAPIFormat())
+func (c *CommandHandlerContext) hasOverridePermission(channelID state.DiscordID, wantedPermission int) bool {
+	channel, err := c.Session.State.Channel(channelID.RESTAPIFormat())
 	if err != nil {
 		log.Printf("Couldn't find category: %v", err)
 		return false
 	}
 
-	for _, permission := range category.PermissionOverwrites {
-		if permission.Allow&discordgo.PermissionManageChannels != 0 {
+	for _, permission := range channel.PermissionOverwrites {
+		if permission.Allow&wantedPermission != 0 {
 			return true
 		}
 	}
@@ -241,7 +241,22 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	// TODO: handle command.AdminOnly
+	if command.AdminOnly {
+		authorID, err := state.ParseDiscordID(context.Event.Author.ID)
+		if err != nil {
+			log.Fatalf("Failed to parse author ID: %v", err)
+		}
+
+		server, err := context.Session.State.Guild(context.Event.GuildID)
+		if err != nil {
+			log.Fatalf("Failed to parse server ID: %v", err)
+		}
+
+		if !(authorID.Equals(server.OwnerID) || context.hasServerPermission(authorID, discordgo.PermissionAdministrator)) {
+			context.reply(`You must have "Administrator" permissions in order to run this command`)
+			return
+		}
+	}
 
 	err = command.Handler(context)
 	if err != nil {
@@ -304,8 +319,8 @@ func (b *TempChannelBot) setupHandler(context *CommandHandlerContext) error {
 		return nil
 	}
 
-	if !context.canManageAllChannels() {
-		if !context.canManageChannelInCategory(categoryID) {
+	if !context.hasServerPermission(context.BotUserID, discordgo.PermissionManageChannels) {
+		if !context.hasOverridePermission(categoryID, discordgo.PermissionManageChannels) {
 			context.reply(`The bot doesn't have the "Manage Channels" permission for this category.`)
 			return nil
 		}
