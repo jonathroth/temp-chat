@@ -12,12 +12,12 @@ import (
 
 func (b *TempChannelBot) initCommands() map[string]*Command {
 	return map[string]*Command{
-		"help":                           &Command{SetupRequired: false, AdminOnly: false, Handler: helpHandler},
-		"setup":                          &Command{SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
-		consts.DefaultMakeChannelCommand: &Command{SetupRequired: true, AdminOnly: false, Handler: b.mkchHandler},
-		"set-mkch":                       &Command{SetupRequired: true, AdminOnly: true, Handler: b.setMkchHandler},
-		"set-prefix":                     &Command{SetupRequired: true, AdminOnly: true, Handler: b.setPrefixHandler},
-		"set-command-ch":                 &Command{SetupRequired: true, AdminOnly: true, Handler: b.setCommandChannelHandler},
+		"help":                           {SetupRequired: false, AdminOnly: false, Handler: helpHandler},
+		"setup":                          {SetupRequired: false, AdminOnly: true, Handler: b.setupHandler},
+		consts.DefaultMakeChannelCommand: {SetupRequired: true, AdminOnly: false, Handler: b.mkchHandler},
+		"set-mkch":                       {SetupRequired: true, AdminOnly: true, Handler: b.setMkchHandler},
+		"set-prefix":                     {SetupRequired: true, AdminOnly: true, Handler: b.setPrefixHandler},
+		"set-command-ch":                 {SetupRequired: true, AdminOnly: true, Handler: b.setCommandChannelHandler},
 	}
 }
 
