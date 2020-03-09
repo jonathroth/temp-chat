@@ -43,7 +43,7 @@ func (b *TempChannelBot) VoiceStatusUpdate(s *discordgo.Session, vsu *discordgo.
 		// User has left voice chat
 		err = b.tempChannels.RemoveUserFromChannel(userID)
 		if err != nil {
-			log.Printf("Failed to assign user to new temp channel: %v", err) // TODO: notify user somehow?
+			log.Printf("Failed to remove user from temp channel: %v", err) // TODO: notify user somehow?
 		}
 		return
 	}
