@@ -225,6 +225,7 @@ func createTempChannel(context *CommandHandlerContext, userIDs []state.DiscordID
 			ID:    userID.RESTAPIFormat(),
 			Type:  consts.PermissionTypeMember,
 			Allow: discordgo.PermissionReadMessages,
+			Deny:  discordgo.PermissionReadMessageHistory,
 		}
 		overwrites = append(overwrites, perm)
 	}
@@ -261,7 +262,7 @@ func (c *TempChannel) AllowUserAccess(userID state.DiscordID) error {
 		log.Printf("User %v is already in the channel %v", userID, c.channel.Name)
 	}
 
-	err := c.session.ChannelPermissionSet(c.channel.ID, userID.RESTAPIFormat(), consts.PermissionTypeMember, discordgo.PermissionReadMessages, 0)
+	err := c.session.ChannelPermissionSet(c.channel.ID, userID.RESTAPIFormat(), consts.PermissionTypeMember, discordgo.PermissionReadMessages, discordgo.PermissionReadMessageHistory)
 	if err != nil {
 		return err
 	}
