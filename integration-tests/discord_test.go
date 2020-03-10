@@ -76,6 +76,9 @@ func (s *TestSession) ExpectResponse(to *discordgo.Message, from *discordgo.User
 	interval := time.Tick(pollInterval)
 	timeout := time.After(within)
 
+	channel, err := s.State.Channel(to.ChannelID)
+	failOnErr(s.t, err, "Failed to get channel")
+
 	s.t.Logf("Waiting for response %q for %v", textContains, within)
 	start := time.Now()
 
@@ -85,16 +88,25 @@ func (s *TestSession) ExpectResponse(to *discordgo.Message, from *discordgo.User
 			failOnErr(s.t, errors.New("response timed out"), "Failed getting response within timeout")
 			return nil
 		case <-interval:
-			channel, err := s.State.Channel(to.ChannelID)
-			failOnErr(s.t, err, "Failed to get channel")
-			for _, message := range channel.Messages {
-				if message.Author.ID == from.ID && strings.Contains(message.Content, textContains) {
-					s.t.Logf("Got response after %v", time.Since(start))
-					return message
-				}
+			message := s.findMessage(channel, from, textContains)
+			if message != nil {
+				s.t.Logf("Got response after %v", time.Since(start))
+				return message
 			}
 		}
 	}
+}
+
+func (s *TestSession) findMessage(channel *discordgo.Channel, from *discordgo.User, textContains string) *discordgo.Message {
+	s.State.RLock()
+	defer s.State.RUnlock()
+	for _, message := range channel.Messages {
+		if message.Author.ID == from.ID && strings.Contains(message.Content, textContains) {
+			return message
+		}
+	}
+
+	return nil
 }
 
 func (s *TestSession) HasPermissions(server *discordgo.Guild, channel *discordgo.Channel, permission int) bool {
