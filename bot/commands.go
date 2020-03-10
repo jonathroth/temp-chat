@@ -176,7 +176,7 @@ type Command struct {
 
 // MessageCreate is called whenever a message arrives in a server the bot is in.
 func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID == b.botUserID.RESTAPIFormat() || m.Author.Bot {
+	if m.Author.ID == b.botUserID.RESTAPIFormat() || (!b.AllowBots && m.Author.Bot) {
 		return
 	}
 

@@ -1,0 +1,33 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.14
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.14
+      id: go
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Get dependencies
+      run: go mod download
+
+    - name: Run Integration Tests
+      env:
+        INTEG_TESTS: run
+        INTEG_TEST_BOT_TOKEN: ${{ secrets.INTEG_TEST_BOT_TOKEN }}
+        INTEG_TEST_ADMIN_TOKEN: ${{ secrets.INTEG_TEST_ADMIN_TOKEN }}
+        INTEG_TEST_CLIENT1_TOKEN: ${{ secrets.INTEG_TEST_CLIENT1_TOKEN }}
+        INTEG_TEST_CLIENT2_TOKEN: ${{ secrets.INTEG_TEST_CLIENT2_TOKEN }}
+      run: go test -race -v ./...
