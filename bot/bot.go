@@ -9,6 +9,10 @@ import (
 
 // TempChannelBot contains all the handlers to discord events for the bot to operate.
 type TempChannelBot struct {
+	// Whether to parse commands given by other bots.
+	// Used for running the tests
+	AllowBots bool
+
 	store     state.ServerStore
 	botUserID state.DiscordID
 
