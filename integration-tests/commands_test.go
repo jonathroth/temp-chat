@@ -125,8 +125,12 @@ func (s *IntegrationTestSuite) TestMkch() {
 	voiceChannel2 := s.createChannel("voice2", discordgo.ChannelTypeGuildVoice)
 	defer s.deleteChannel(voiceChannel2)
 
-	_, err = s.client1.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
+	voiceConn1, err := s.client1.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
 	failOnErr(s.T(), err, "Failed joining voice chat")
+	defer func() {
+		err := voiceConn1.Disconnect()
+		assert.NoError(s.T(), err, "Disconnecting from VC failed")
+	}()
 
 	response := s.client1.Command(s.textChannel.ID, "!mkch", s.bot.Me, "temporary channel was created")
 	s.T().Logf("response: %q", response.Content)
@@ -147,8 +151,12 @@ func (s *IntegrationTestSuite) TestMkch() {
 
 	s.client1.SendMessage(tempChatID, "hi")
 
-	_, err = s.client2.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
+	voiceConn2, err := s.client2.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
 	failOnErr(s.T(), err, "Failed joining voice chat")
+	defer func() {
+		err := voiceConn2.Disconnect()
+		assert.NoError(s.T(), err, "Disconnecting from VC failed")
+	}()
 
 	if !s.True(s.client1.HasPermissions(tempChannel, discordgo.PermissionReadMessages), "No read permissions for tempchat creator") {
 		return
@@ -156,6 +164,7 @@ func (s *IntegrationTestSuite) TestMkch() {
 	if !s.True(s.client2.HasPermissions(tempChannel, discordgo.PermissionReadMessages), "User didn't get read permissions") {
 		return
 	}
+
 }
 
 func (s *IntegrationTestSuite) TestSetupRequired() {
