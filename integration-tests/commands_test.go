@@ -3,6 +3,7 @@ package integration_test
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
@@ -12,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
+
+var IDRegex = regexp.MustCompile(`<#(\d+)>`)
 
 /*
 IntegrationTestSuite runs all bot commands using two bot clients.
@@ -94,8 +97,7 @@ func (s *IntegrationTestSuite) SetupTest() {
 		s.T().FailNow()
 	}
 
-	s.textChannel, err = s.admin.GuildChannelCreate(s.server.ID, "command-channel", discordgo.ChannelTypeGuildText)
-	failOnErr(s.T(), err, "Failed creating command channel")
+	s.textChannel = s.createChannel("command-channel", discordgo.ChannelTypeGuildText)
 }
 
 func (s *IntegrationTestSuite) TearDownTest() {
@@ -103,24 +105,82 @@ func (s *IntegrationTestSuite) TearDownTest() {
 		cleanupFunc()
 	}
 
-	_, err := s.admin.ChannelDelete(s.textChannel.ID)
-	assert.NoError(s.T(), err, "Failed to delete command channel")
-
+	s.deleteChannel(s.textChannel)
+	s.tempChannelBot.CleanChannels()
 	assert.NoError(s.T(), s.bot.Close(), "Bot session Close() returned error")
+}
+
+func (s *IntegrationTestSuite) TestMkch() {
+	category := s.createChannel("category", discordgo.ChannelTypeGuildCategory)
+	defer s.deleteChannel(category)
+
+	err := s.admin.ChannelPermissionSet(category.ID, s.bot.Me.ID, consts.PermissionTypeMember, discordgo.PermissionManageChannels, 0)
+	failOnErr(s.T(), err, "Failed giving temp-bot permissions")
+
+	setupCommand := fmt.Sprintf("!setup %v", category.ID)
+	s.admin.Command(s.textChannel.ID, setupCommand, s.bot.Me, "Server was setup successfully")
+
+	voiceChannel1 := s.createChannel("voice1", discordgo.ChannelTypeGuildVoice)
+	defer s.deleteChannel(voiceChannel1)
+	voiceChannel2 := s.createChannel("voice2", discordgo.ChannelTypeGuildVoice)
+	defer s.deleteChannel(voiceChannel2)
+
+	voiceConn1, err := s.client1.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
+	failOnErr(s.T(), err, "Failed joining voice chat")
+	defer func() {
+		err := voiceConn1.Disconnect()
+		assert.NoError(s.T(), err, "Disconnecting from VC failed")
+	}()
+
+	response := s.client1.Command(s.textChannel.ID, "!mkch", s.bot.Me, "temporary channel was created")
+	s.T().Logf("response: %q", response.Content)
+	submatches := IDRegex.FindStringSubmatch(response.Content)
+	if !s.Len(submatches, 2, "Expected 1 submatch") {
+		return
+	}
+
+	tempChatID := submatches[1]
+	_, err = s.admin.State.Channel(tempChatID)
+	failOnErr(s.T(), err, "Created temp chat not found")
+
+	if !s.True(s.client1.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "No read permissions for tempchat creator") {
+		return
+	}
+	if !s.False(s.client2.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "User outside vc has permissions for tempchat") {
+		return
+	}
+
+	content := "hi"
+	s.client1.SendMessage(tempChatID, content)
+
+	voiceConn2, err := s.client2.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
+	failOnErr(s.T(), err, "Failed joining voice chat")
+	defer func() {
+		err := voiceConn2.Disconnect()
+		assert.NoError(s.T(), err, "Disconnecting from VC failed")
+	}()
+
+	messages, err := s.client2.ChannelMessages(tempChatID, 1, "", "", "")
+	failOnErr(s.T(), err, "Failed getting messages from text chat the bot is in")
+	for _, message := range messages {
+		assert.NotEqual(s.T(), content, message.Content, "Didn't expect seeing message sent before joining")
+	}
+
+	if !s.True(s.client1.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "No read permissions for tempchat creator") {
+		return
+	}
+	if !s.True(s.client2.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "User didn't get read permissions") {
+		return
+	}
 }
 
 func (s *IntegrationTestSuite) TestSetupRequired() {
 	s.client1.Command(s.textChannel.ID, "!mkch", s.bot.Me, "bot hasn't been set up yet")
 
-	category, err := s.admin.GuildChannelCreate(s.server.ID, "temp", discordgo.ChannelTypeGuildCategory)
-	failOnErr(s.T(), err, "Failed creating category")
+	category := s.createChannel("temp", discordgo.ChannelTypeGuildCategory)
+	defer s.deleteChannel(category)
 
-	defer func() {
-		_, err := s.admin.ChannelDelete(category.ID)
-		assert.NoError(s.T(), err, "Couldn't remove category")
-	}()
-
-	err = s.admin.ChannelPermissionSet(category.ID, s.bot.Me.ID, consts.PermissionTypeMember, discordgo.PermissionManageChannels, 0)
+	err := s.admin.ChannelPermissionSet(category.ID, s.bot.Me.ID, consts.PermissionTypeMember, discordgo.PermissionManageChannels, 0)
 	failOnErr(s.T(), err, "Failed giving temp-bot permissions")
 
 	setupCommand := fmt.Sprintf("!setup %v", category.ID)
@@ -132,4 +192,15 @@ func (s *IntegrationTestSuite) TestSetupRequired() {
 func (s *IntegrationTestSuite) TestAdminOnly() {
 	s.client1.Command(s.textChannel.ID, "!setup", s.bot.Me, `must have "Administrator" permissions`)
 	s.admin.Command(s.textChannel.ID, "!setup", s.bot.Me, "Missing category ID, please check !help to see how to use the command")
+}
+
+func (s *IntegrationTestSuite) createChannel(name string, channelType discordgo.ChannelType) *discordgo.Channel {
+	channel, err := s.admin.GuildChannelCreate(s.server.ID, name, channelType)
+	failOnErr(s.T(), err, "Failed creating command channel")
+	return channel
+}
+
+func (s *IntegrationTestSuite) deleteChannel(channel *discordgo.Channel) {
+	_, err := s.admin.ChannelDelete(channel.ID)
+	assert.NoError(s.T(), err, "Couldn't remove category")
 }

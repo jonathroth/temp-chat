@@ -3,6 +3,7 @@ package bot
 import (
 	"errors"
 	"log"
+	"sync"
 
 	"github.com/Pallinder/go-randomdata"
 	"github.com/bwmarrin/discordgo"
@@ -18,16 +19,12 @@ func (b *TempChannelBot) ChannelDelete(s *discordgo.Session, m *discordgo.Channe
 	}
 
 	if m.Type == discordgo.ChannelTypeGuildVoice {
-		tempChannel, exists := b.tempChannels.GetTempChannelForVoiceChat(channelID)
-		if exists {
+		if tempChannel, removed := b.tempChannels.RemoveTempChannelByVoiceChat(channelID); removed {
 			log.Printf("An administrator deleted the voice channel for temp chat %v", tempChannel.channelID)
-			b.tempChannels.DeleteTempChannel(tempChannel)
 		}
 	} else if m.Type == discordgo.ChannelTypeGuildText {
-		tempChannel, exists := b.tempChannels.GetTempChannelByID(channelID)
-		if exists {
+		if tempChannel, removed := b.tempChannels.RemoveTempChannelByID(channelID); removed {
 			log.Printf("An administrator deleted the temp chat %v", tempChannel.channelID)
-			b.tempChannels.DeleteTempChannel(tempChannel)
 		}
 	}
 }
@@ -64,6 +61,8 @@ type channelMap map[state.DiscordID]*TempChannel
 
 // TempChannelList manages the list of temporary channels created by the bot.
 type TempChannelList struct {
+	sync.RWMutex
+
 	tempChannelIDToTempChannel  channelMap
 	voiceChannelIDToTempChannel channelMap
 	userIDToTempChannel         channelMap
@@ -83,18 +82,44 @@ func NewTempChannelList(session *discordgo.Session) *TempChannelList {
 
 // GetTempChannelForVoiceChat returns the temporary text channel that is assigned to the given voice channel ID.
 func (l *TempChannelList) GetTempChannelForVoiceChat(voiceChannelID state.DiscordID) (*TempChannel, bool) {
+	l.RLock()
+	defer l.RUnlock()
 	tempChannel, found := l.voiceChannelIDToTempChannel[voiceChannelID]
 	return tempChannel, found
 }
 
-// GetTempChannelByID returns the temporary text channel that has the given ID.
-func (l *TempChannelList) GetTempChannelByID(tempChannelID state.DiscordID) (*TempChannel, bool) {
+// RemoveTempChannelByVoiceChat deletes a temp channel bound to the given voice channel ID, if it exists.
+// Returns whether a channel was found and removed.
+func (l *TempChannelList) RemoveTempChannelByVoiceChat(voiceChannelID state.DiscordID) (*TempChannel, bool) {
+	l.RLock()
+	defer l.RUnlock()
+	tempChannel, found := l.voiceChannelIDToTempChannel[voiceChannelID]
+	if !found {
+		return nil, false
+	}
+
+	l.deleteTempChannelNoLock(tempChannel)
+	return tempChannel, true
+}
+
+// RemoveTempChannelByID deletes a temp channel if it exists.
+// Returns whether a channel was found and removed.
+func (l *TempChannelList) RemoveTempChannelByID(tempChannelID state.DiscordID) (*TempChannel, bool) {
+	l.RLock()
+	defer l.RUnlock()
 	tempChannel, found := l.tempChannelIDToTempChannel[tempChannelID]
-	return tempChannel, found
+	if !found {
+		return nil, false
+	}
+
+	l.deleteTempChannelNoLock(tempChannel)
+	return tempChannel, true
 }
 
 // AddTempChannel adds a new temp channel to the list.
 func (l *TempChannelList) AddTempChannel(tempChannel *TempChannel) {
+	l.Lock()
+	defer l.Unlock()
 	l.tempChannelIDToTempChannel[tempChannel.channelID] = tempChannel
 	l.voiceChannelIDToTempChannel[tempChannel.voiceChannelID] = tempChannel
 	for userID := range tempChannel.members {
@@ -102,8 +127,16 @@ func (l *TempChannelList) AddTempChannel(tempChannel *TempChannel) {
 	}
 }
 
-// DeleteTempChannel deletes a temp channel from the list.
-func (l *TempChannelList) DeleteTempChannel(tempChannel *TempChannel) {
+// DeleteAllChannels deletes all temp channels.
+func (l *TempChannelList) DeleteAllChannels() {
+	l.Lock()
+	defer l.Unlock()
+	for _, tempChannel := range l.tempChannelIDToTempChannel {
+		l.deleteTempChannelNoLock(tempChannel)
+	}
+}
+
+func (l *TempChannelList) deleteTempChannelNoLock(tempChannel *TempChannel) {
 	for userID := range tempChannel.members {
 		delete(l.userIDToTempChannel, userID)
 	}
@@ -124,7 +157,10 @@ func (l *TempChannelList) DeleteTempChannel(tempChannel *TempChannel) {
 // AssignUserToTempChannel gives a user access to a temp voice channel.
 // It will remove access from a previous chat, if the user was in one.
 func (l *TempChannelList) AssignUserToTempChannel(userID state.DiscordID, voiceChannelID state.DiscordID) error {
-	err := l.RemoveUserFromChannel(userID)
+	l.Lock()
+	defer l.Unlock()
+
+	err := l.removeUserFromChannelNoLock(userID)
 	if err != nil {
 		return err
 	}
@@ -146,6 +182,12 @@ func (l *TempChannelList) AssignUserToTempChannel(userID state.DiscordID, voiceC
 
 // RemoveUserFromChannel removes a user when from a voice chat when the user.
 func (l *TempChannelList) RemoveUserFromChannel(userID state.DiscordID) error {
+	l.Lock()
+	defer l.Unlock()
+	return l.removeUserFromChannelNoLock(userID)
+}
+
+func (l *TempChannelList) removeUserFromChannelNoLock(userID state.DiscordID) error {
 	oldChannel, found := l.userIDToTempChannel[userID]
 	if found {
 		channelEmpty, err := oldChannel.DenyUserAccess(userID)
@@ -154,7 +196,7 @@ func (l *TempChannelList) RemoveUserFromChannel(userID state.DiscordID) error {
 		}
 
 		if channelEmpty {
-			l.DeleteTempChannel(oldChannel)
+			l.deleteTempChannelNoLock(oldChannel)
 		}
 	}
 

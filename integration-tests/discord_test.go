@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/jonathroth/temp-chat/consts"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -50,9 +49,9 @@ func NewTestBotSession(t *testing.T, token string) *TestSession {
 	return session
 }
 
-func (s *TestSession) Command(channelID string, command string, responder *discordgo.User, responseContains string) {
+func (s *TestSession) Command(channelID string, command string, responder *discordgo.User, responseContains string) *discordgo.Message {
 	m := s.SendMessage(channelID, command)
-	_ = s.ExpectResponse(m, responder, responseContains, 5*time.Second)
+	return s.ExpectResponse(m, responder, responseContains, 5*time.Second)
 }
 
 func (s *TestSession) CommandTimeout(channelID string, command string, responder *discordgo.User, responseContains string, within time.Duration) {
@@ -67,7 +66,7 @@ func (s *TestSession) SendMessage(channelID string, message string, args ...inte
 }
 
 func (s *TestSession) ExpectResponse(to *discordgo.Message, from *discordgo.User, textContains string, within time.Duration) *discordgo.Message {
-	pollInterval := 100 * time.Millisecond
+	pollInterval := 25 * time.Millisecond
 
 	if within < pollInterval {
 		within = 1 * time.Second
@@ -109,41 +108,9 @@ func (s *TestSession) findMessage(channel *discordgo.Channel, from *discordgo.Us
 	return nil
 }
 
-func (s *TestSession) HasPermissions(server *discordgo.Guild, channel *discordgo.Channel, permission int) bool {
-	user, err := s.Session.GuildMember(server.ID, s.Me.ID)
-	failOnErr(s.t, err, "Couldn't get user")
+func (s *TestSession) HasPermissions(channelID string, permission int) bool {
+	permissions, err := s.Session.UserChannelPermissions(s.Me.ID, channelID)
+	failOnErr(s.t, err, "Failed to get permissions")
 
-	roles := []*discordgo.Role{}
-	for _, role := range server.Roles {
-		if role.Name == consts.EveryoneRoleName {
-			roles = append(roles, role)
-		}
-
-		for _, userRoleID := range user.Roles {
-			if role.ID == userRoleID {
-				roles = append(roles, role)
-			}
-		}
-	}
-
-	// Check permission overrides denying access to specific channel
-	for _, overwrite := range channel.PermissionOverwrites {
-		if overwrite.Type == consts.PermissionTypeMember && overwrite.ID == s.Me.ID && overwrite.Deny&permission != 0 {
-			return false
-		}
-		for _, role := range roles {
-			if overwrite.Type == consts.PermissionTypeRole && overwrite.ID == role.ID && overwrite.Deny&permission != 0 {
-				return false
-			}
-		}
-	}
-
-	// Check global role
-	for _, role := range roles {
-		if role.Permissions&permission == 0 {
-			return false
-		}
-	}
-
-	return true
+	return permissions&permission != 0
 }
