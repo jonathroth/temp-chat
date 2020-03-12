@@ -70,6 +70,16 @@ func (c *CommandHandlerContext) hasServerPermission(userID state.DiscordID, want
 		return false
 	}
 
+	server, err := c.Session.State.Guild(c.Event.GuildID)
+	if err != nil {
+		log.Fatalf("Failed to parse server ID: %v", err)
+		return false
+	}
+
+	if userID.Equals(server.OwnerID) {
+		return true
+	}
+
 	everyoneRoleID, err := getEveryoneRoleID(c)
 	if err != nil {
 		log.Fatalf("Failed to get @everyone role ID: %v", err)
@@ -253,12 +263,7 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 			log.Fatalf("Failed to parse author ID: %v", err)
 		}
 
-		server, err := context.Session.State.Guild(context.Event.GuildID)
-		if err != nil {
-			log.Fatalf("Failed to parse server ID: %v", err)
-		}
-
-		if !(authorID.Equals(server.OwnerID) || context.hasServerPermission(authorID, discordgo.PermissionAdministrator)) {
+		if !(context.hasServerPermission(authorID, discordgo.PermissionAdministrator)) {
 			context.reply(`You must have "Administrator" permissions in order to run this command`)
 			return
 		}
