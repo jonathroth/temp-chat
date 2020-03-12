@@ -108,10 +108,8 @@ func (s *TestSession) findMessage(channel *discordgo.Channel, from *discordgo.Us
 	return nil
 }
 
-func (s *TestSession) HasPermissions(channel *discordgo.Channel, permission int) bool {
-	s.State.RLock()
-	defer s.State.RUnlock()
-	permissions, err := s.Session.UserChannelPermissions(s.Me.ID, channel.ID)
+func (s *TestSession) HasPermissions(channelID string, permission int) bool {
+	permissions, err := s.Session.UserChannelPermissions(s.Me.ID, channelID)
 	failOnErr(s.t, err, "Failed to get permissions")
 
 	return permissions&permission != 0
