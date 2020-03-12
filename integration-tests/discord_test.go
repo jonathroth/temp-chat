@@ -66,7 +66,7 @@ func (s *TestSession) SendMessage(channelID string, message string, args ...inte
 }
 
 func (s *TestSession) ExpectResponse(to *discordgo.Message, from *discordgo.User, textContains string, within time.Duration) *discordgo.Message {
-	pollInterval := 100 * time.Millisecond
+	pollInterval := 25 * time.Millisecond
 
 	if within < pollInterval {
 		within = 1 * time.Second
