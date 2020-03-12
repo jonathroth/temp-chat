@@ -45,7 +45,5 @@ func NewTempChannelBot(session *discordgo.Session, store state.ServerStore) (*Te
 
 // CleanChannels deletes all the temp channels created by the bot.
 func (b *TempChannelBot) CleanChannels() {
-	for _, tempChannel := range b.tempChannels.tempChannelIDToTempChannel {
-		b.tempChannels.DeleteTempChannel(tempChannel)
-	}
+	b.tempChannels.DeleteAllChannels()
 }
