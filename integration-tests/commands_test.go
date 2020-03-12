@@ -149,7 +149,8 @@ func (s *IntegrationTestSuite) TestMkch() {
 		return
 	}
 
-	s.client1.SendMessage(tempChatID, "hi")
+	content := "hi"
+	s.client1.SendMessage(tempChatID, content)
 
 	voiceConn2, err := s.client2.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
 	failOnErr(s.T(), err, "Failed joining voice chat")
@@ -158,13 +159,18 @@ func (s *IntegrationTestSuite) TestMkch() {
 		assert.NoError(s.T(), err, "Disconnecting from VC failed")
 	}()
 
+	messages, err := s.client2.ChannelMessages(tempChatID, 1, "", "", "")
+	failOnErr(s.T(), err, "Failed getting messages from text chat the bot is in")
+	for _, message := range messages {
+		assert.NotEqual(s.T(), content, message.Content, "Didn't expect seeing message sent before joining")
+	}
+
 	if !s.True(s.client1.HasPermissions(tempChannel, discordgo.PermissionReadMessages), "No read permissions for tempchat creator") {
 		return
 	}
 	if !s.True(s.client2.HasPermissions(tempChannel, discordgo.PermissionReadMessages), "User didn't get read permissions") {
 		return
 	}
-
 }
 
 func (s *IntegrationTestSuite) TestSetupRequired() {
