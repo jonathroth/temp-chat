@@ -159,6 +159,10 @@ func (c *CommandHandlerContext) getVoiceChannelParticipants(voiceChanelID state.
 	return participants
 }
 
+func (c *CommandHandlerContext) isDM() bool {
+	return c.Event.GuildID == ""
+}
+
 func (c *CommandHandlerContext) categoryExists(categoryID string) bool {
 	channel, err := c.Session.State.Channel(categoryID)
 	return existsInState(err) && channel.GuildID == c.Event.GuildID && channel.Type == discordgo.ChannelTypeGuildCategory
@@ -196,12 +200,18 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
+	context := NewCommandHandlerContext(s, m, b.botUserID)
+
+	if context.isDM() {
+		b.handleDM(context)
+		return
+	}
+
 	serverID, err := state.ParseDiscordID(m.GuildID)
 	if err != nil {
 		log.Fatalf("Failed to parse discord server ID: %v", err)
 	}
 
-	context := NewCommandHandlerContext(s, m, b.botUserID)
 	serverData, serverIsSetup := b.store.Server(serverID)
 	context.ServerID = serverID
 	context.ServerData = serverData
@@ -231,47 +241,75 @@ func (b *TempChannelBot) MessageCreate(s *discordgo.Session, m *discordgo.Messag
 		}
 	}
 
-	commandText := strings.TrimPrefix(m.Content, prefix)
-	commandParts := strings.Split(commandText, " ")
-
-	if serverIsSetup && serverData.HasCustomCommand() && commandParts[0] == serverData.CustomCommand() {
-		commandParts[0] = consts.DefaultMakeChannelCommand
-	}
-
-	context.CommandName = commandParts[0]
-	context.CommandArgs = commandParts[1:]
-
-	if !consts.ValidCommandLettersRegex.MatchString(context.CommandName) {
+	valid := b.parseCommand(context, prefix)
+	if !valid {
 		// Not a valid command, ignore
 		return
 	}
 
-	command, found := b.commands[commandParts[0]]
-	if !found {
-		context.reply("Unknown command")
-		return
+	b.handleCommand(context, prefix)
+}
+
+func (b *TempChannelBot) parseCommand(context *CommandHandlerContext, prefix string) bool {
+	commandText := strings.TrimPrefix(context.Event.Content, prefix)
+	commandParts := strings.Split(commandText, " ")
+	context.CommandName = commandParts[0]
+	context.CommandArgs = commandParts[1:]
+
+	serverIsSetup := context.ServerData != nil
+	if serverIsSetup && context.ServerData.HasCustomCommand() && commandParts[0] == context.ServerData.CustomCommand() {
+		context.CommandName = consts.DefaultMakeChannelCommand
 	}
 
-	if command.SetupRequired && !serverIsSetup {
+	if !consts.ValidCommandLettersRegex.MatchString(context.CommandName) {
+		return false
+	}
+
+	return true
+}
+func (b *TempChannelBot) handleCommand(context *CommandHandlerContext, prefix string) bool {
+	command, found := b.commands[context.CommandName]
+	if !found {
+		context.reply("Unknown command")
+		return false
+	}
+
+	if command.SetupRequired && context.ServerData == nil {
 		context.logAndReply("The bot hasn't been set up yet, please use %vsetup first", prefix)
-		return
+		return false
 	}
 
 	if command.AdminOnly {
 		authorID, err := state.ParseDiscordID(context.Event.Author.ID)
 		if err != nil {
 			log.Fatalf("Failed to parse author ID: %v", err)
+			return false
 		}
 
 		if !(context.hasServerPermission(authorID, discordgo.PermissionAdministrator)) {
 			context.reply(`You must have "Administrator" permissions in order to run this command`)
-			return
+			return false
 		}
 	}
 
-	err = command.Handler(context)
+	err := command.Handler(context)
 	if err != nil {
 		log.Fatalf("Command handler %v failed: %v", context.CommandName, err)
+	}
+
+	return true
+}
+
+func (b *TempChannelBot) handleDM(context *CommandHandlerContext) {
+	valid := b.parseCommand(context, consts.DefaultCommandPrefix)
+	if !valid || context.CommandName != "help" {
+		context.replyUnformatted("`The bot doesn't accept any command besides !help in private messages. You may use the following link to invite the bot to your server: `\nhttps://discordapp.com/oauth2/authorize?&client_id=503558207189417984&scope=bot&permissions=3088")
+		return
+	}
+
+	err := helpHandler(context)
+	if err != nil {
+		log.Fatalf("Failed to send help to DM: %v", err)
 	}
 }
 
