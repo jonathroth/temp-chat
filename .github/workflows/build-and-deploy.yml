@@ -1,4 +1,4 @@
-name: Build
+name: Build and Deploy
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
     name: Deploy to Heroku
     needs: [build]
     runs-on: ubuntu-latest
-    # if: github.ref == "master"
+    if: github.ref == 'refs/heads/master'
     steps:
     - name: Login to Heroku
       uses: actions/heroku@master
@@ -50,15 +50,15 @@ jobs:
       with:
         args: container:login
 
-    - name: Push
+    - name: Build & Push container to Heroku
       uses: actions/heroku@master
       env:
         HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
         HEROKU_APP: ${{ secrets.HEROKU_APP }}
       with:
-        args: container:push worker
+        args: container:push --recursive --context-path .
 
-    - name: Release to Heroku dyno
+    - name: Release to Heroku Dyno
       uses: actions/heroku@master
       env:
         HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}

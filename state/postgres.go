@@ -64,6 +64,8 @@ func (p *PostgresServersProvider) Servers() (ServersData, error) {
 		return nil, err
 	}
 
+	defer rows.Close()
+
 	for rows.Next() {
 		serverData, err := p.initializeServer(rows)
 		if err != nil {
