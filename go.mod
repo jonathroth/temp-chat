@@ -1,6 +1,6 @@
 module github.com/jonathroth/temp-chat
 
-// +heroku goVersion go1.14
+// +heroku goVersion go1.13
 go 1.14
 
 require (

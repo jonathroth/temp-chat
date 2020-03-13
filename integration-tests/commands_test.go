@@ -194,6 +194,15 @@ func (s *IntegrationTestSuite) TestAdminOnly() {
 	s.admin.Command(s.textChannel.ID, "!setup", s.bot.Me, "Missing category ID, please check !help to see how to use the command")
 }
 
+func (s *IntegrationTestSuite) TestDM() {
+	s.T().Skip(`Bots cannot DM other bots, test results in HTTP 403 Forbidden, {"message": "Cannot send messages to this user", "code": 50007}`)
+	botDMChannel, err := s.client1.UserChannelCreate(s.bot.Me.ID)
+	failOnErr(s.T(), err, "Failed to create DM channel with bot")
+	s.client1.Command(botDMChannel.ID, "!help", s.bot.Me, "TempChat is a bot that creates temporary text channels for Discord voice chats")
+	s.client1.Command(botDMChannel.ID, "help", s.bot.Me, "bot doesn't accept any command besides !help in private messages")
+	s.client1.Command(botDMChannel.ID, "....", s.bot.Me, "bot doesn't accept any command besides !help in private messages")
+}
+
 func (s *IntegrationTestSuite) createChannel(name string, channelType discordgo.ChannelType) *discordgo.Channel {
 	channel, err := s.admin.GuildChannelCreate(s.server.ID, name, channelType)
 	failOnErr(s.T(), err, "Failed creating command channel")
