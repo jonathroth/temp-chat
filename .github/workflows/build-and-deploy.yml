@@ -36,3 +36,32 @@ jobs:
 
     - name: Run All Tests
       run: go test -race -coverprofile=coverage.txt -covermode=atomic -v ./...
+
+  deploy:
+    name: Deploy to Heroku
+    needs: [build]
+    runs-on: ubuntu-latest
+    # if: github.ref == "master"
+    steps:
+    - name: Login to Heroku
+      uses: actions/heroku@master
+      env:
+        HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+      with:
+        args: container:login
+
+    - name: Push
+      uses: actions/heroku@master
+      env:
+        HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        HEROKU_APP: ${{ secrets.HEROKU_APP }}
+      with:
+        args: container:push worker
+
+    - name: Release to Heroku dyno
+      uses: actions/heroku@master
+      env:
+        HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        HEROKU_APP: ${{ secrets.HEROKU_APP }}
+      with:
+        args: container:release worker
