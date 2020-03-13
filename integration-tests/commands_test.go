@@ -33,6 +33,8 @@ type IntegrationTestSuite struct {
 	suite.Suite
 
 	bot            *TestSession
+	provider       *MemoryDataProvider
+	store          state.ServerStore
 	tempChannelBot *bot.TempChannelBot
 
 	admin   *TestSession
@@ -80,9 +82,11 @@ func (s *IntegrationTestSuite) TearDownSuite() {
 func (s *IntegrationTestSuite) SetupTest() {
 	s.bot = NewTestBotSession(s.T(), os.Getenv("INTEG_TEST_BOT_TOKEN"))
 
-	store, err := state.NewSyncServerStore(NewMemoryDataProvider())
+	var err error
+	s.provider = NewMemoryDataProvider()
+	s.store, err = state.NewSyncServerStore(s.provider)
 	failOnErr(s.T(), err, "Failed initializing server store")
-	s.tempChannelBot, err = bot.NewTempChannelBot(s.bot.Session, store)
+	s.tempChannelBot, err = bot.NewTempChannelBot(s.bot.Session, s.store)
 	failOnErr(s.T(), err, "Failed initializing bot")
 
 	s.tempChannelBot.AllowBots = true
@@ -187,18 +191,39 @@ func (s *IntegrationTestSuite) TestMkch() {
 }
 
 func (s *IntegrationTestSuite) TestSetupRequired() {
-	s.client1.Command(s.textChannel.ID, "!mkch", s.bot.Me, "bot hasn't been set up yet")
+	mkchResponse := s.client1.Command(s.textChannel.ID, "!mkch", s.bot.Me, "bot hasn't been set up yet")
+
+	serverID, err := state.ParseDiscordID(mkchResponse.GuildID)
+	failOnErr(s.T(), err, "Failed to parse server ID for response")
+
+	_, inDatabase := s.provider.database[serverID]
+	assert.False(s.T(), inDatabase, "Message in database before setup")
 
 	category := s.createChannel("temp", discordgo.ChannelTypeGuildCategory)
 	defer s.deleteChannel(category)
 
-	err := s.admin.ChannelPermissionSet(category.ID, s.bot.Me.ID, consts.PermissionTypeMember, discordgo.PermissionManageChannels, 0)
+	err = s.admin.ChannelPermissionSet(category.ID, s.bot.Me.ID, consts.PermissionTypeMember, discordgo.PermissionManageChannels, 0)
 	failOnErr(s.T(), err, "Failed giving temp-bot permissions")
 
-	setupCommand := fmt.Sprintf("!setup %v", category.ID)
-	s.admin.Command(s.textChannel.ID, setupCommand, s.bot.Me, "Server was setup successfully")
+	s.admin.Command(s.textChannel.ID, fmt.Sprintf("!setup %v", category.ID), s.bot.Me, "Server was setup successfully")
+
+	data, inDatabase := s.provider.database[serverID]
+	assert.True(s.T(), inDatabase, "Message not in database after setup")
+	assert.Equal(s.T(), data.TempChannelCategoryID().RESTAPIFormat(), category.ID, "Category not equal to setup category")
 
 	s.client1.Command(s.textChannel.ID, "!mkch", s.bot.Me, "You must be in a voice chat to use this command")
+
+	category2 := s.createChannel("temp2", discordgo.ChannelTypeGuildCategory)
+	defer s.deleteChannel(category2)
+
+	err = s.admin.ChannelPermissionSet(category2.ID, s.bot.Me.ID, consts.PermissionTypeMember, discordgo.PermissionManageChannels, 0)
+	failOnErr(s.T(), err, "Failed giving temp-bot permissions")
+
+	s.admin.Command(s.textChannel.ID, fmt.Sprintf("!setup %v", category2.ID), s.bot.Me, "Server was setup successfully")
+
+	data, inDatabase = s.provider.database[serverID]
+	assert.True(s.T(), inDatabase, "Message not in database after setup")
+	assert.Equal(s.T(), data.TempChannelCategoryID().RESTAPIFormat(), category2.ID, "Category wasn't updated")
 }
 
 func (s *IntegrationTestSuite) TestAdminOnly() {
