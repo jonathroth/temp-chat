@@ -190,6 +190,10 @@ func (s *IntegrationTestSuite) TestMkch() {
 	assert.Error(s.T(), err, "Channel wasn't removed after both users left")
 }
 
+func (s *IntegrationTestSuite) TestHelp() {
+	s.client1.Command(s.textChannel.ID, "!help", s.bot.Me, "TempChat is a bot that creates temporary text channels for Discord voice chats")
+}
+
 func (s *IntegrationTestSuite) TestSetupRequired() {
 	mkchResponse := s.client1.Command(s.textChannel.ID, "!mkch", s.bot.Me, "bot hasn't been set up yet")
 
