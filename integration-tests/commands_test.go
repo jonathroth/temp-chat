@@ -127,10 +127,6 @@ func (s *IntegrationTestSuite) TestMkch() {
 
 	voiceConn1, err := s.client1.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
 	failOnErr(s.T(), err, "Failed joining voice chat")
-	defer func() {
-		err := voiceConn1.Disconnect()
-		assert.NoError(s.T(), err, "Disconnecting from VC failed")
-	}()
 
 	response := s.client1.Command(s.textChannel.ID, "!mkch", s.bot.Me, "temporary channel was created")
 	s.T().Logf("response: %q", response.Content)
@@ -155,10 +151,6 @@ func (s *IntegrationTestSuite) TestMkch() {
 
 	voiceConn2, err := s.client2.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
 	failOnErr(s.T(), err, "Failed joining voice chat")
-	defer func() {
-		err := voiceConn2.Disconnect()
-		assert.NoError(s.T(), err, "Disconnecting from VC failed")
-	}()
 
 	messages, err := s.client2.ChannelMessages(tempChatID, 1, "", "", "")
 	failOnErr(s.T(), err, "Failed getting messages from text chat the bot is in")
@@ -172,6 +164,26 @@ func (s *IntegrationTestSuite) TestMkch() {
 	if !s.True(s.client2.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "User didn't get read permissions") {
 		return
 	}
+
+	err = voiceConn1.Disconnect()
+	assert.NoError(s.T(), err, "Disconnecting from VC failed")
+	err = voiceConn2.Disconnect()
+	assert.NoError(s.T(), err, "Disconnecting from VC failed")
+
+	_, err = s.client1.Channel(tempChatID)
+	assert.Error(s.T(), err, "Channel wasn't removed after both users left")
+	_, err = s.admin.Channel(tempChatID)
+	assert.Error(s.T(), err, "Channel wasn't removed after both users left")
+
+	voiceConn1, err = s.client1.ChannelVoiceJoin(s.server.ID, voiceChannel1.ID, true, true)
+	failOnErr(s.T(), err, "Failed joining voice chat")
+	defer func() {
+		err = voiceConn1.Disconnect()
+		assert.NoError(s.T(), err, "Disconnecting from VC failed")
+	}()
+
+	_, err = s.client1.Channel(tempChatID)
+	assert.Error(s.T(), err, "Channel wasn't removed after both users left")
 }
 
 func (s *IntegrationTestSuite) TestSetupRequired() {
