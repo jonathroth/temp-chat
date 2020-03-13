@@ -41,13 +41,15 @@ jobs:
     name: Deploy to Heroku
     needs: [build]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    # if: github.ref == 'refs/heads/master'
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
 
     - name: Get dependencies
-      run: go mod vendor
+      run: |
+        go mod tidy
+        go mod vendor
 
     - name: Login to Heroku
       uses: actions/heroku@master
