@@ -25,6 +25,7 @@ type TestSession struct {
 
 func NewTestClientSession(t *testing.T, token string) *TestSession {
 	session := NewTestBotSession(t, token)
+	session.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAll)
 	session.State.MaxMessageCount = 10
 
 	err := session.Open()
@@ -36,6 +37,7 @@ func NewTestClientSession(t *testing.T, token string) *TestSession {
 // NewTestBotSession creates a discord session without opening it, so we can config the handlers first
 func NewTestBotSession(t *testing.T, token string) *TestSession {
 	discordSession, err := discordgo.New("Bot " + token)
+	discordSession.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAll)
 	failOnErr(t, err, "Failed to create discord session")
 
 	me, err := discordSession.User("@me")

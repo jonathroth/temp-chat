@@ -56,6 +56,8 @@ func main() {
 func waitForBot(session *discordgo.Session, tempChannelBot *bot.TempChannelBot) {
 	defer tempChannelBot.CleanChannels()
 
+	session.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAll)
+
 	session.AddHandler(tempChannelBot.MessageCreate)
 	session.AddHandler(tempChannelBot.ChannelDelete)
 	session.AddHandler(tempChannelBot.VoiceStatusUpdate)
