@@ -253,12 +253,12 @@ func createTempChannel(context *CommandHandlerContext, userIDs []state.DiscordID
 		{
 			ID:   everyoneRoleID,
 			Type: consts.PermissionTypeRole,
-			Deny: discordgo.PermissionReadMessages,
+			Deny: discordgo.PermissionViewChannel,
 		},
 		{
 			ID:    context.BotUserID.RESTAPIFormat(),
 			Type:  consts.PermissionTypeMember,
-			Allow: discordgo.PermissionReadMessages | discordgo.PermissionManageChannels | discordgo.PermissionManageRoles,
+			Allow: discordgo.PermissionViewChannel | discordgo.PermissionManageChannels | discordgo.PermissionManageRoles,
 		},
 	}
 
@@ -266,7 +266,7 @@ func createTempChannel(context *CommandHandlerContext, userIDs []state.DiscordID
 		perm := &discordgo.PermissionOverwrite{
 			ID:    userID.RESTAPIFormat(),
 			Type:  consts.PermissionTypeMember,
-			Allow: discordgo.PermissionReadMessages,
+			Allow: discordgo.PermissionViewChannel,
 			Deny:  discordgo.PermissionReadMessageHistory,
 		}
 		overwrites = append(overwrites, perm)
@@ -304,7 +304,7 @@ func (c *TempChannel) AllowUserAccess(userID state.DiscordID) error {
 		log.Printf("User %v is already in the channel %v", userID, c.channel.Name)
 	}
 
-	err := c.session.ChannelPermissionSet(c.channel.ID, userID.RESTAPIFormat(), consts.PermissionTypeMember, discordgo.PermissionReadMessages, discordgo.PermissionReadMessageHistory)
+	err := c.session.ChannelPermissionSet(c.channel.ID, userID.RESTAPIFormat(), consts.PermissionTypeMember, discordgo.PermissionViewChannel, discordgo.PermissionReadMessageHistory)
 	if err != nil {
 		return err
 	}

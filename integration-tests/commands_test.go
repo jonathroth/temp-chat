@@ -143,10 +143,10 @@ func (s *IntegrationTestSuite) TestMkch() {
 	_, err = s.admin.State.Channel(tempChatID)
 	failOnErr(s.T(), err, "Created temp chat not found")
 
-	if !s.True(s.client1.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "No read permissions for tempchat creator") {
+	if !s.True(s.client1.HasPermissions(tempChatID, discordgo.PermissionViewChannel), "No read permissions for tempchat creator") {
 		return
 	}
-	if !s.False(s.client2.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "User outside vc has permissions for tempchat") {
+	if !s.False(s.client2.HasPermissions(tempChatID, discordgo.PermissionViewChannel), "User outside vc has permissions for tempchat") {
 		return
 	}
 
@@ -162,10 +162,10 @@ func (s *IntegrationTestSuite) TestMkch() {
 		assert.NotEqual(s.T(), content, message.Content, "Didn't expect seeing message sent before joining")
 	}
 
-	if !s.True(s.client1.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "No read permissions for tempchat creator") {
+	if !s.True(s.client1.HasPermissions(tempChatID, discordgo.PermissionViewChannel), "No read permissions for tempchat creator") {
 		return
 	}
-	if !s.True(s.client2.HasPermissions(tempChatID, discordgo.PermissionReadMessages), "User didn't get read permissions") {
+	if !s.True(s.client2.HasPermissions(tempChatID, discordgo.PermissionViewChannel), "User didn't get read permissions") {
 		return
 	}
 
